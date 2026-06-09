@@ -1,11 +1,24 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { MOCK_LECTURES, type ParsedLecture } from "@/lib/aiGateway";
 
 export interface QuizMistake {
   question: string;
   selected: string;
   correct: string;
   lectureTitle: string;
+}
+
+export interface ParsedLecture {
+  subject: string;
+  difficulty: "Beginner" | "Intermediate" | "Advanced";
+  tags: string[];
+  summary: string;
+  flashcards: { term: string; definition: string }[];
+  quiz: {
+    question: string;
+    options: string[];
+    correct_index: number;
+    explanations: string[];
+  }[];
 }
 
 export interface Lecture {
@@ -36,8 +49,8 @@ const ArcadeContext = createContext<Ctx | null>(null);
 export function ArcadeProvider({ children }: { children: ReactNode }) {
   const [xp, setXp] = useState(120);
   const [streak] = useState(3);
-  const [lectures, setLectures] = useState<Lecture[]>(MOCK_LECTURES);
-  const [activeLecture, setActiveLecture] = useState<Lecture | null>(MOCK_LECTURES[0]);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [activeLecture, setActiveLecture] = useState<Lecture | null>(null);
   const [mistakes, setMistakes] = useState<QuizMistake[]>([]);
   const [achievements, setAchievements] = useState<Record<string, boolean>>({
     "first-quiz": true,
