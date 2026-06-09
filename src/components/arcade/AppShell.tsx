@@ -1,7 +1,8 @@
-import { Settings, Home, BookOpen, Gamepad2, MessageSquare, Brain, FileCheck2, Trophy, Zap } from "lucide-react";
+import { Settings, Home, BookOpen, Gamepad2, MessageSquare, Brain, FileCheck2, Trophy, Zap, RotateCcw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { SettingsModal } from "./SettingsModal";
 import { useArcade } from "./store";
+import { toast } from "sonner";
 
 export type Page =
   | "dashboard"
@@ -24,7 +25,15 @@ const NAV: { id: Page; label: string; icon: typeof Home }[] = [
 
 export function AppShell({ page, onPage, children }: { page: Page; onPage: (p: Page) => void; children: ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { xp, streak } = useArcade();
+  const { xp, streak, resetStudyProgress } = useArcade();
+
+  const handleReset = () => {
+    const ok = window.confirm("Are you sure you want to reset your study quest? This will clear your XP, streak, mastered deck, and tracking history, but will NOT delete your API credentials.");
+    if (ok) {
+      resetStudyProgress();
+      toast.success("Study quest has been reset!");
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -44,6 +53,13 @@ export function AppShell({ page, onPage, children }: { page: Page; onPage: (p: P
             <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-arcade/20 border border-emerald-arcade text-emerald-arcade font-bold text-sm">
               <Zap className="h-4 w-4" /> {xp} XP
             </div>
+            <button
+              onClick={handleReset}
+              className="p-2 rounded-full bg-card border border-border hover:bg-muted transition-all hover:scale-110 duration-200"
+              aria-label="Reset Study Quest"
+            >
+              <RotateCcw className="h-5 w-5" />
+            </button>
             <button
               onClick={() => setSettingsOpen(true)}
               className="p-2 rounded-full bg-card border border-border hover:bg-muted transition-all hover:rotate-90 duration-300"

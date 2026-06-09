@@ -336,3 +336,102 @@ Lecture notes:
 """
 ${text}
 """`;
+
+export interface GranolaNote {
+  id: string;
+  title: string;
+  ai_summary: string;
+  transcript: string;
+  workspace: string;
+}
+
+export const FALLBACK_MOCK_NOTES: GranolaNote[] = [
+  {
+    id: "g-raw-1",
+    title: "MIT CS 6.100L Lecture 1 — Computation Notes",
+    workspace: "Computer Science",
+    ai_summary: "Lecture notes on computation, primitive data types, evaluation of expressions, operators, and interpreter behavior in modern environments like Python.",
+    transcript: "Lecture notes on computation, primitive data types, evaluation of expressions, operators, and interpreter behavior in modern environments like Python. Variables bind specific memory locations to reuse references across sequences."
+  },
+  {
+    id: "g-raw-2",
+    title: "Intro to Photosynthesis Meeting",
+    workspace: "Biology",
+    ai_summary: "Photosynthesis converts light energy into complex chemical configurations.",
+    transcript: "Photosynthesis converts light energy into complex chemical configurations. The process relies on chlorophyll pigments stored directly within plant chloroplast architectures to successfully execute light reactions alongside the traditional Calvin cycle."
+  },
+  {
+    id: "g-raw-3",
+    title: "Macroeconomics Principles & Inflationary Pressures",
+    workspace: "Economics",
+    ai_summary: "An examination of how shifts in structural liquidity and consumer index metrics force monetary updates.",
+    transcript: "An examination of how shifts in structural liquidity and consumer index metrics force monetary updates. Discussed pricing structures, supply chain disruptions, and historic models tracking resource pricing behavior."
+  },
+  {
+    id: "g-raw-4",
+    title: "Renaissance Art Movements & Perspectives",
+    workspace: "Art History",
+    ai_summary: "A comprehensive breakdown of linear perspective techniques introduced during the early 15th century.",
+    transcript: "A comprehensive breakdown of linear perspective techniques introduced during the early 15th century. Explored humanism impacts on iconographic choices and panel painting compositions across Florence."
+  }
+];
+
+export async function fetchGranolaNotes(): Promise<GranolaNote[]> {
+  const apiKey = typeof window !== 'undefined'
+    ? ((window as any).LOVABLE_API_KEY || (import.meta.env.VITE_LOVABLE_API_KEY || ''))
+    : '';
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-Lovable-Api-Key"] = apiKey;
+  }
+
+  try {
+    const response = await fetch("/api/connectors/granola/meetings", {
+      headers,
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
+      if (Array.isArray(list)) {
+        return list.map((note: any) => ({
+          id: note.id || crypto.randomUUID(),
+          title: note.title || "Untitled Meeting",
+          ai_summary: note.ai_summary || note.summary || note.aiSummary || "No summary available.",
+          transcript: note.transcript || note.raw || note.text || "No transcript available.",
+          workspace: note.workspace || note.workspace_name || note.workspaceName || "General",
+        }));
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to fetch granola notes from local backend connector, trying supabase function...", error);
+  }
+
+  try {
+    const supabase = (window as any).supabase;
+    if (supabase && typeof supabase.functions?.invoke === "function") {
+      const { data, error } = await supabase.functions.invoke("get-granola-notes");
+      if (!error && data) {
+        const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
+        if (Array.isArray(list)) {
+          return list.map((note: any) => ({
+            id: note.id || crypto.randomUUID(),
+            title: note.title || "Untitled Meeting",
+            ai_summary: note.ai_summary || note.summary || note.aiSummary || "No summary available.",
+            transcript: note.transcript || note.raw || note.text || "No transcript available.",
+            workspace: note.workspace || note.workspace_name || note.workspaceName || "General",
+          }));
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to invoke supabase function for granola notes", error);
+  }
+
+  console.log("Using offline mock fallback modules for Granola notes.");
+  return FALLBACK_MOCK_NOTES;
+}
