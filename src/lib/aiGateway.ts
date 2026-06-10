@@ -813,9 +813,6 @@ function getGranolaRequestInit(manualKey: string | null) {
 }
 
 function getGranolaUrl(endpoint: string, manualKey: string | null): string {
-  if (manualKey) {
-    return `https://public-api.granola.ai/v1${endpoint}`;
-  }
   return `/api/granola${endpoint}`;
 }
 
