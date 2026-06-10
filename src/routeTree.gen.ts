@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiGranolaStatusRouteImport } from './routes/api/granola.status'
+import { Route as ApiGranolaSplatRouteImport } from './routes/api/granola.$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGranolaStatusRoute = ApiGranolaStatusRouteImport.update({
+  id: '/api/granola/status',
+  path: '/api/granola/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGranolaSplatRoute = ApiGranolaSplatRouteImport.update({
+  id: '/api/granola/$',
+  path: '/api/granola/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/granola/$': typeof ApiGranolaSplatRoute
+  '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/granola/$': typeof ApiGranolaSplatRoute
+  '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/granola/$': typeof ApiGranolaSplatRoute
+  '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/granola/$' | '/api/granola/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/granola/$' | '/api/granola/status'
+  id: '__root__' | '/' | '/api/granola/$' | '/api/granola/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiGranolaSplatRoute: typeof ApiGranolaSplatRoute
+  ApiGranolaStatusRoute: typeof ApiGranolaStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/granola/status': {
+      id: '/api/granola/status'
+      path: '/api/granola/status'
+      fullPath: '/api/granola/status'
+      preLoaderRoute: typeof ApiGranolaStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/granola/$': {
+      id: '/api/granola/$'
+      path: '/api/granola/$'
+      fullPath: '/api/granola/$'
+      preLoaderRoute: typeof ApiGranolaSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiGranolaSplatRoute: ApiGranolaSplatRoute,
+  ApiGranolaStatusRoute: ApiGranolaStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
