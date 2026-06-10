@@ -41,7 +41,7 @@ export function LectureDeck() {
   
   // IMPLEMENT THREE-TIER STATE MANAGEMENT
   // State A: All raw meetings available in your Granola account (hidden from sidebar by default)
-  const [allGranolaMeetings, setAllGranolaMeetings] = useState<any[]>([]);
+  const [granolaAPIMeetings, setGranolaAPIMeetings] = useState<any[]>([]);
 
   // State B: Only meetings the user has explicitly selected and imported from the selection pane
   const [importedRawNotes, setImportedRawNotes] = useState<any[]>([]);
@@ -51,8 +51,7 @@ export function LectureDeck() {
 
   // UI States
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
-  const [selectedRawNote, setSelectedRawNote] = useState<any | null>(null);
-  const [pasted, setPasted] = useState("");
+  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
   
@@ -62,9 +61,9 @@ export function LectureDeck() {
   const [notesLoading, setNotesLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"cheat" | "flashcards" | "quiz">("cheat");
-  const [dropdownSelectedId, setDropdownSelectedId] = useState<string>("");
   const [showRawTextToggle, setShowRawTextToggle] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [pasted, setPasted] = useState("");
 
   const configured = isConfigured(loadSettings());
 
@@ -94,7 +93,7 @@ export function LectureDeck() {
     setNotesLoading(true);
     try {
       const notes = await fetchGranolaNotes();
-      setAllGranolaMeetings(notes);
+      setGranolaAPIMeetings(notes);
     } catch (e) {
       console.error("Failed to load Granola data:", e);
     } finally {
@@ -165,7 +164,7 @@ export function LectureDeck() {
     }
   }, []);
 
-  // Load Sample Mock Data handler (loads samples straight into State A selection dropdown)
+  // Load Sample Mock Data handler (loads samples straight into State A selection checklist)
   const handleLoadMockData = () => {
     const sampleModules = [
       {
@@ -186,7 +185,7 @@ export function LectureDeck() {
       }
     ];
 
-    setAllGranolaMeetings(prev => {
+    setGranolaAPIMeetings(prev => {
       const existingIds = new Set(prev.map(item => item.id));
       const uniqueNewSamples = sampleModules.filter(item => !existingIds.has(item.id));
       return [...prev, ...uniqueNewSamples];
@@ -260,27 +259,65 @@ export function LectureDeck() {
     };
   };
 
-  // Import Raw Note from State A (allGranolaMeetings) to State B (importedRawNotes)
-  const handleImportRawNote = async () => {
-    if (!dropdownSelectedId) return;
-    const meeting = allGranolaMeetings.find(m => m.id === dropdownSelectedId);
-    if (!meeting) return;
+  // Toggle checklist note ID selection
+  const handleToggleSelect = (id: string) => {
+    setSelectedImportIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // Dropdown options: exclude already imported/mastered meetings
+  const availableToImport = granolaAPIMeetings.filter((m) => {
+    const isImported = importedRawNotes.some((r) => r.id === m.id);
+    const isMastered = masteredDeck.some((d) => d.id === m.id);
+    return !isImported && !isMastered;
+  });
+
+  const handleSelectAll = () => {
+    setSelectedImportIds(availableToImport.map(m => m.id));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedImportIds([]);
+  };
+
+  // Loop over all checked IDs, fetch transcripts in parallel, and push to importedRawNotes
+  const handleImportSelectedNotes = async () => {
+    if (selectedImportIds.length === 0) return;
 
     try {
       setIsImporting(true);
-      const res = await fetch(`/api/granola/notes/${meeting.id}?include=transcript`).catch(() => null);
-      const detailNote = res && res.ok ? await res.json().catch(() => meeting) : meeting;
+      
+      const newImported = await Promise.all(
+        selectedImportIds.map(async (id) => {
+          const meeting = granolaAPIMeetings.find(m => m.id === id);
+          if (!meeting) return null;
+          
+          try {
+            const res = await fetch(`/api/granola/notes/${id}?include=transcript`).catch(() => null);
+            if (res && res.ok) {
+              return await res.json().catch(() => meeting);
+            }
+          } catch (e) {
+            console.error(`Failed to fetch detail for ${id}:`, e);
+          }
+          return meeting;
+        })
+      );
+
+      const validNewImported = newImported.filter((item): item is any => item !== null);
 
       setImportedRawNotes(prev => {
-        if (prev.some(item => item.id === detailNote.id)) return prev;
-        return [...prev, detailNote];
+        const existingIds = new Set(prev.map(item => item.id));
+        const filteredNew = validNewImported.filter(item => !existingIds.has(item.id));
+        return [...prev, ...filteredNew];
       });
 
-      setDropdownSelectedId("");
-      toast.success(`📥 Note "${detailNote.title}" imported!`);
+      setSelectedImportIds([]);
+      toast.success(`📥 Imported ${validNewImported.length} notes to raw sidebar!`);
     } catch (e) {
-      console.error(e);
-      toast.error("Failed to import note.");
+      console.error("Failed to import selected notes:", e);
+      toast.error("Failed to import selected notes.");
     } finally {
       setIsImporting(false);
     }
@@ -336,7 +373,6 @@ export function LectureDeck() {
       setImportedRawNotes(prev => prev.filter(item => item.id !== note.id));
       
       setSelectedNote(processedModule);
-      setSelectedRawNote(null);
       toast.success("🏆 Added to Mastered Deck!");
     } catch (error) {
       console.error("AI Generation failed:", error);
@@ -376,7 +412,6 @@ export function LectureDeck() {
         return [...prev, processedModule];
       });
       setSelectedNote(processedModule);
-      setSelectedRawNote(null);
       setPasted("");
       toast.success("⚡ Imported & analyzed!");
     } catch (e) {
@@ -399,7 +434,6 @@ export function LectureDeck() {
           return [...prev, processedModule];
         });
         setSelectedNote(processedModule);
-        setSelectedRawNote(null);
         setPasted("");
         toast.info("Loaded fallback mock analysis.");
       });
@@ -410,7 +444,7 @@ export function LectureDeck() {
 
   const handleDeleteRawNote = (id: string) => {
     setImportedRawNotes(prev => prev.filter(n => n.id !== id));
-    if (selectedRawNote?.id === id) setSelectedRawNote(null);
+    if (selectedNote?.id === id) setSelectedNote(null);
   };
 
   const handleDeleteMasteredNote = (id: string) => {
@@ -421,7 +455,7 @@ export function LectureDeck() {
   const handleClearAllRawNotes = () => {
     if (window.confirm("Are you sure you want to clear all raw notes?")) {
       setImportedRawNotes([]);
-      setSelectedRawNote(null);
+      setSelectedNote(null);
       toast.success("💥 All raw notes cleared!");
     }
   };
@@ -435,12 +469,10 @@ export function LectureDeck() {
   };
 
   const handleSelectRawNote = (n: any) => {
-    setSelectedNote(null);
-    setSelectedRawNote(n);
+    setSelectedNote(n);
   };
 
   const handleSelectMastered = (l: any) => {
-    setSelectedRawNote(null);
     setSelectedNote(l);
   };
 
@@ -457,16 +489,16 @@ export function LectureDeck() {
   // Sidebar visible raw notes
   const visibleRawNotes = importedRawNotes;
 
-  // Dropdown options: exclude already imported/mastered meetings
-  const availableToImport = allGranolaMeetings.filter((m) => {
-    const isImported = importedRawNotes.some((r) => r.id === m.id);
-    const isMastered = masteredDeck.some((d) => d.id === m.id);
-    return !isImported && !isMastered;
-  });
+  const isProcessed = selectedNote ? masteredDeck.some(m => m.id === selectedNote.id) : false;
 
   const isMastered = selectedNote
     ? masteredDeck.some((l) => l.id === selectedNote.id || l.title === selectedNote.title)
     : false;
+
+  // Defensive raw notes & transcripts accordion text extractions
+  const notesText = selectedNote?.notes || "No original notes available.";
+  const transcriptText = selectedNote?.transcript || "No transcript available.";
+  const lines = typeof transcriptText === 'string' ? transcriptText.split('\n') : [];
 
   return (
     <div className="space-y-6">
@@ -493,39 +525,61 @@ export function LectureDeck() {
         <div className="space-y-4">
           <ConnectButton status={connStatus} onClick={checkConnection} />
 
-          {/* 1. REPURPOSED DROP-DOWN PANEL (IMPORT FROM GRANOLA) */}
-          <div className="arcade-card p-3 bg-muted/20 text-left">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+          {/* 1. IMPORT FROM GRANOLA WORKFLOW (CHECKLIST PANEL WITH MULTI-SELECTION) */}
+          <div className="arcade-card p-3 bg-muted/20 text-left space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
               <span>Import from Granola</span>
               {notesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-            </label>
-            <select
-              value={dropdownSelectedId}
-              onChange={(e) => setDropdownSelectedId(e.target.value)}
-              disabled={availableToImport.length === 0}
-              className="w-full mt-1.5 rounded-md bg-input border border-border p-2 text-sm text-foreground focus:outline-none focus:border-indigo-arcade disabled:opacity-50"
-            >
+            </div>
+
+            {/* Select All / Deselect All toggles */}
+            {availableToImport.length > 0 && (
+              <div className="flex gap-2 text-[10px]">
+                <button
+                  onClick={handleSelectAll}
+                  className="text-indigo-400 hover:underline cursor-pointer font-bold"
+                >
+                  Select All
+                </button>
+                <span className="text-muted-foreground">|</span>
+                <button
+                  onClick={handleDeselectAll}
+                  className="text-indigo-400 hover:underline cursor-pointer font-bold"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
+
+            {/* Scrollable checklist panel */}
+            <div className="max-h-48 overflow-y-auto bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2 scrollbar-thin">
               {availableToImport.length === 0 ? (
-                <option value="">— No meetings available —</option>
+                <p className="text-xs text-muted-foreground italic text-center p-2">
+                  No meetings available.
+                </p>
               ) : (
-                <>
-                  <option value="">— Select meeting to import —</option>
-                  {availableToImport.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.title}
-                    </option>
-                  ))}
-                </>
+                availableToImport.map((meeting) => (
+                  <label key={meeting.id} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-800 rounded transition duration-150">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedImportIds.includes(meeting.id)}
+                      onChange={() => handleToggleSelect(meeting.id)}
+                      className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-200 line-clamp-1">{meeting.title}</span>
+                  </label>
+                ))
               )}
-            </select>
-            {/* 2. THE IMPORT NOTE BUTTON */}
+            </div>
+
+            {/* Import Button */}
             <Button
-              onClick={handleImportRawNote}
-              disabled={!dropdownSelectedId || isImporting}
-              className="w-full mt-2 bg-indigo-arcade hover:bg-indigo-arcade/80 text-white font-bold h-9 text-xs"
+              onClick={handleImportSelectedNotes}
+              disabled={selectedImportIds.length === 0 || isImporting}
+              className="w-full bg-indigo-arcade hover:bg-indigo-arcade/80 text-white font-bold h-9 text-xs"
             >
               {isImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-              Import Selected Note ⚡
+              Import Selected ({selectedImportIds.length}) Notes ⚡
             </Button>
           </div>
 
@@ -552,14 +606,14 @@ export function LectureDeck() {
             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
               {visibleRawNotes.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic p-2 leading-relaxed text-left">
-                  No imported notes in sidebar yet. Select a meeting in the dropdown to import.
+                  No imported notes in sidebar yet. Select items in the checklist panel to import.
                 </p>
               ) : (
                 visibleRawNotes.map((t) => (
                   <div
                     key={t.id}
                     className={`group flex items-center justify-between gap-1 w-full rounded-lg border border-dashed transition-all ${
-                      selectedRawNote?.id === t.id
+                      selectedNote?.id === t.id && !isProcessed
                         ? "bg-amber-arcade/20 border-amber-arcade"
                         : "bg-card/40 border-muted-foreground/30 hover:bg-amber-arcade/10 hover:border-amber-arcade hover:scale-[1.01]"
                     }`}
@@ -614,7 +668,7 @@ export function LectureDeck() {
                   <div
                     key={l.id}
                     className={`group flex items-center justify-between gap-1 w-full rounded-lg border transition-all ${
-                      selectedNote?.id === l.id
+                      selectedNote?.id === l.id && isProcessed
                         ? "bg-fuchsia-arcade/20 border-fuchsia-arcade"
                         : "bg-card border-border hover:bg-muted hover:scale-[1.01]"
                     }`}
@@ -678,7 +732,7 @@ export function LectureDeck() {
           </div>
 
           {/* RENDER PLACEHOLDER, SELECTIVE IMPORT LANDING SCREEN, OR MASTERED STUDY GUIDE */}
-          {allGranolaMeetings.length === 0 && importedRawNotes.length === 0 && masteredDeck.length === 0 ? (
+          {granolaAPIMeetings.length === 0 && importedRawNotes.length === 0 && masteredDeck.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-800 rounded-2xl border border-dashed border-slate-700 max-w-lg mx-auto mt-12">
               <span className="text-5xl mb-4">🎮</span>
               <h3 className="text-xl font-bold text-slate-200 mb-2">Ready to study?</h3>
@@ -690,18 +744,18 @@ export function LectureDeck() {
                 Load Sample Mock Data 📚
               </button>
             </div>
-          ) : selectedRawNote ? (
-            /* 3. COLLAPSIBLE RAW NOTES & TRANSCRIPTS */
+          ) : selectedNote && !isProcessed ? (
+            /* 3. COLLAPSIBLE RAW NOTES & TRANSCRIPTS landing panel inside central workspace */
             <div className="arcade-card p-6 border-l-4 border-l-amber-arcade space-y-4 text-left animate-bounce-in">
               <h3 className="font-bold text-xl text-foreground">
-                Selected Raw Note: {selectedRawNote.title}
+                Selected Raw Note: {selectedNote.title}
               </h3>
               
               <p className="text-sm text-muted-foreground">
                 This meeting has not been analyzed yet. Click 'Analyze with AI ⚡' below to generate your study arcade.
               </p>
 
-              {/* Collapsible raw notes & transcripts accordion drawer */}
+              {/* Collapsible raw notes & transcripts accordion drawer with defensive split checks */}
               <div className="border border-slate-750 bg-slate-900/40 rounded-lg p-3">
                 <button
                   onClick={() => setShowRawTextToggle(!showRawTextToggle)}
@@ -716,14 +770,18 @@ export function LectureDeck() {
                   <div className="grid md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-800">
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Raw Notes</span>
-                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-300 scrollbar-thin">
-                        {selectedRawNote.notes || 'No raw notes.'}
+                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-350 scrollbar-thin">
+                        {notesText}
                       </div>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Raw Transcript</span>
-                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-300 scrollbar-thin">
-                        {selectedRawNote.transcript || 'No transcript available.'}
+                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-350 scrollbar-thin">
+                        {lines.length > 0 ? (
+                          lines.map((line, idx) => <p key={idx}>{line}</p>)
+                        ) : (
+                          <p className="italic text-muted-foreground">{transcriptText}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -733,7 +791,7 @@ export function LectureDeck() {
               {/* 4. AI ANALYSIS MOVEMENT BUTTON */}
               <div className="pt-2">
                 <Button
-                  onClick={() => handleImportAndProcess(selectedRawNote)}
+                  onClick={() => handleImportAndProcess(selectedNote)}
                   disabled={isImporting}
                   className="bg-amber-arcade hover:bg-amber-arcade/80 text-background font-bold text-base px-6 py-6 rounded-xl animate-pulse-glow w-full"
                 >
@@ -749,7 +807,7 @@ export function LectureDeck() {
                 </Button>
               </div>
             </div>
-          ) : selectedNote ? (
+          ) : selectedNote && isProcessed ? (
             /* MASTERED PORTAL DECK VIEW (ORIGINAL TRANSCRIPT HIDDEN) */
             <>
               {/* Tab Selector Buttons */}
