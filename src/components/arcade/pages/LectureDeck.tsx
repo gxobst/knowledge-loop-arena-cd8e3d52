@@ -112,6 +112,7 @@ export function LectureDeck() {
     const s = await fetchGranolaStatus();
     
     const hasManualKey = !!(
+      localStorage.getItem("granola_api_key") ||
       localStorage.getItem("lectureloop_granola_key") ||
       localStorage.getItem("lectureloop_ai_settings") ||
       (typeof window !== "undefined" && (window as any).LOVABLE_API_KEY)
@@ -257,6 +258,16 @@ export function LectureDeck() {
     setSelectedRawNote(null);
     setPasted("");
   }
+
+  const handleAddToMasteredDeck = (lecture: Lecture) => {
+    const exists = lectures.some((l) => l.id === lecture.id || l.title === lecture.title);
+    if (!exists) {
+      setLectures([lecture, ...lectures]);
+      toast.success("🏆 Added to Mastered Deck!");
+    } else {
+      toast.info("Topic already mastered.");
+    }
+  };
 
   const handleImportSelected = async () => {
     if (!selectedRawNote) return;
@@ -531,6 +542,7 @@ export function LectureDeck() {
                 <div className="pt-3 mt-3 border-t border-border/50">
                   <Button
                     disabled={isMastered}
+                    onClick={() => handleAddToMasteredDeck(activeLecture)}
                     className={`w-full py-5 text-sm font-bold uppercase tracking-wider rounded-lg ${
                       isMastered
                         ? "bg-emerald-arcade/20 border border-emerald-arcade text-emerald-arcade opacity-80"
