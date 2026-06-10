@@ -345,6 +345,11 @@ export interface GranolaNote {
   workspace: string;
 }
 
+export interface GranolaFolder {
+  id: string;
+  name: string;
+}
+
 export const FALLBACK_MOCK_NOTES: GranolaNote[] = [
   {
     id: "g-raw-1",
@@ -376,62 +381,80 @@ export const FALLBACK_MOCK_NOTES: GranolaNote[] = [
   }
 ];
 
-export async function fetchGranolaNotes(): Promise<GranolaNote[]> {
-  const apiKey = typeof window !== 'undefined'
-    ? ((window as any).LOVABLE_API_KEY || (import.meta.env.VITE_LOVABLE_API_KEY || ''))
-    : '';
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  
-  if (apiKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
-    headers["X-Lovable-Api-Key"] = apiKey;
-  }
-
+export async function fetchGranolaStatus(): Promise<{ connected: boolean; reason?: string | null; outcome?: string }> {
   try {
-    const response = await fetch("/api/connectors/granola/meetings", {
-      headers,
-    });
-    if (response.ok) {
-      const data = await response.json();
-      const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
-      if (Array.isArray(list)) {
-        return list.map((note: any) => ({
-          id: note.id || crypto.randomUUID(),
-          title: note.title || "Untitled Meeting",
-          ai_summary: note.ai_summary || note.summary || note.aiSummary || "No summary available.",
-          transcript: note.transcript || note.raw || note.text || "No transcript available.",
-          workspace: note.workspace || note.workspace_name || note.workspaceName || "General",
-        }));
-      }
-    }
-  } catch (error) {
-    console.warn("Failed to fetch granola notes from local backend connector, trying supabase function...", error);
+    const res = await fetch("/api/granola/status");
+    if (!res.ok) return { connected: false, reason: `Status ${res.status}` };
+    return await res.json();
+  } catch (e) {
+    return { connected: false, reason: e instanceof Error ? e.message : String(e) };
   }
-
-  try {
-    const supabase = (window as any).supabase;
-    if (supabase && typeof supabase.functions?.invoke === "function") {
-      const { data, error } = await supabase.functions.invoke("get-granola-notes");
-      if (!error && data) {
-        const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
-        if (Array.isArray(list)) {
-          return list.map((note: any) => ({
-            id: note.id || crypto.randomUUID(),
-            title: note.title || "Untitled Meeting",
-            ai_summary: note.ai_summary || note.summary || note.aiSummary || "No summary available.",
-            transcript: note.transcript || note.raw || note.text || "No transcript available.",
-            workspace: note.workspace || note.workspace_name || note.workspaceName || "General",
-          }));
-        }
-      }
-    }
-  } catch (error) {
-    console.warn("Failed to invoke supabase function for granola notes", error);
-  }
-
-  console.log("Using offline mock fallback modules for Granola notes.");
-  return FALLBACK_MOCK_NOTES;
 }
+
+export async function fetchGranolaFolders(): Promise<GranolaFolder[]> {
+  const all: GranolaFolder[] = [];
+  let cursor: string | undefined;
+  let guard = 0;
+  do {
+    const qs = new URLSearchParams({ page_size: "30" });
+    if (cursor) qs.set("cursor", cursor);
+    const res = await fetch(`/api/granola/folders?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Folders fetch failed: ${res.status}`);
+    const data = await res.json();
+    const folders = (data.folders ?? []) as Array<{ id: string; name: string }>;
+    all.push(...folders.map((f) => ({ id: f.id, name: f.name })));
+    cursor = data.hasMore ? data.cursor : undefined;
+    guard++;
+  } while (cursor && guard < 10);
+  return all;
+}
+
+export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[]> {
+  const all: GranolaNote[] = [];
+  let cursor: string | undefined;
+  let guard = 0;
+  do {
+    const qs = new URLSearchParams({ limit: "20" });
+    if (cursor) qs.set("cursor", cursor);
+    if (folderId) qs.set("folder_id", folderId);
+    const res = await fetch(`/api/granola/notes?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Notes fetch failed: ${res.status}`);
+    const data = await res.json();
+    const notes = (data.notes ?? []) as Array<Record<string, unknown>>;
+    all.push(
+      ...notes.map((n) => ({
+        id: String(n.id ?? crypto.randomUUID()),
+        title: String(n.title ?? "Untitled Meeting"),
+        ai_summary: String(n.ai_summary ?? n.summary ?? ""),
+        transcript: String(n.transcript ?? ""),
+        workspace: String(
+          (n.folder as { name?: string } | undefined)?.name ??
+            n.folder_name ??
+            n.workspace ??
+            "General",
+        ),
+      })),
+    );
+    cursor = data.hasMore ? data.cursor : undefined;
+    guard++;
+  } while (cursor && guard < 5);
+  return all;
+}
+
+export async function fetchGranolaNoteDetail(id: string): Promise<GranolaNote | null> {
+  try {
+    const res = await fetch(`/api/granola/notes/${encodeURIComponent(id)}?include=transcript`);
+    if (!res.ok) return null;
+    const n = await res.json();
+    return {
+      id: String(n.id ?? id),
+      title: String(n.title ?? "Untitled"),
+      ai_summary: String(n.ai_summary ?? n.summary ?? ""),
+      transcript: String(n.transcript ?? ""),
+      workspace: String((n.folder as { name?: string } | undefined)?.name ?? n.folder_name ?? n.workspace ?? "General"),
+    };
+  } catch {
+    return null;
+  }
+}
+
