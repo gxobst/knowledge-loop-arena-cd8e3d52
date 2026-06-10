@@ -879,7 +879,12 @@ export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[
   let guard = 0;
   try {
     do {
-      const qs = new URLSearchParams({ limit: "30", page_size: "30" });
+      const qs = new URLSearchParams({
+        limit: "30",
+        page_size: "30",
+        include: "transcript,raw_transcript",
+        expand: "transcript,raw_transcript"
+      });
       if (cursor) qs.set("cursor", cursor);
       if (folderId) qs.set("folder_id", folderId);
 
@@ -907,8 +912,8 @@ export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[
         ...list.map((n: any) => ({
           id: String(n.id ?? crypto.randomUUID()),
           title: String(n.title ?? "Untitled Meeting"),
-          ai_summary: String(n.ai_summary ?? n.summary ?? ""),
-          transcript: String(n.transcript ?? ""),
+          ai_summary: String(n.ai_summary ?? n.summary ?? n.text ?? ""),
+          transcript: String(n.raw_transcript ?? n.rawTranscript ?? n.transcript ?? n.content ?? n.body ?? n.notes ?? n.text ?? ""),
           workspace: String(
             (n.workspace ||
             n.workspace_name ||
@@ -934,15 +939,19 @@ export async function fetchGranolaNoteDetail(id: string): Promise<GranolaNote | 
     : null;
   const init = getGranolaRequestInit(manualKey);
   try {
-    const url = getGranolaUrl(`/notes/${encodeURIComponent(id)}?include=transcript`, manualKey);
+    const qs = new URLSearchParams({
+      include: "transcript,raw_transcript",
+      expand: "transcript,raw_transcript"
+    });
+    const url = getGranolaUrl(`/notes/${encodeURIComponent(id)}?${qs.toString()}`, manualKey);
     const res = await fetch(url, init);
     if (!res.ok) return null;
     const n = await res.json();
     return {
       id: String(n.id ?? id),
       title: String(n.title ?? "Untitled"),
-      ai_summary: String(n.ai_summary ?? n.summary ?? ""),
-      transcript: String(n.transcript ?? ""),
+      ai_summary: String(n.ai_summary ?? n.summary ?? n.text ?? ""),
+      transcript: String(n.raw_transcript ?? n.rawTranscript ?? n.transcript ?? n.content ?? n.body ?? n.notes ?? n.text ?? ""),
       workspace: String((n.folder as { name?: string } | undefined)?.name ?? n.folder_name ?? n.workspace ?? "General"),
     };
   } catch {
