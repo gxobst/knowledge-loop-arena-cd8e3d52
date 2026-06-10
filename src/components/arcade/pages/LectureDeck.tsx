@@ -71,8 +71,28 @@ export function LectureDeck() {
     setFoldersLoading(true);
     try {
       const f = await fetchGranolaFolders();
-      setFolders(f);
-      setSelectedFolderId((prev) => prev || (f[0]?.id ?? ""));
+      if (f && f.length > 0) {
+        setFolders(f);
+        setSelectedFolderId((prev) => prev || (f[0]?.id ?? ""));
+      } else {
+        // Scenario A: No folders exist in user's account -> Inject virtual fallback folder
+        const fallbackFolders: GranolaFolder[] = [{ id: "all_notes", name: "All Meetings 📚" }];
+        setFolders(fallbackFolders);
+        setSelectedFolderId("all_notes");
+
+        // Immediately trigger follow-up fetch for all loose notes
+        setNotesLoading(true);
+        try {
+          const notes = await fetchGranolaNotes(); // bypass folder param
+          setNotesByFolder((prev) => ({ ...prev, all_notes: notes }));
+        } catch (noteErr) {
+          toast.error("Failed to load loose meeting notes", {
+            description: noteErr instanceof Error ? noteErr.message : String(noteErr),
+          });
+        } finally {
+          setNotesLoading(false);
+        }
+      }
     } catch (e) {
       toast.error("Failed to load Granola workspaces", {
         description: e instanceof Error ? e.message : String(e),
@@ -80,6 +100,10 @@ export function LectureDeck() {
     } finally {
       setFoldersLoading(false);
     }
+  }, []);
+
+  const handleFolderSelect = useCallback((folderId: string) => {
+    setSelectedFolderId(folderId);
   }, []);
 
   const checkConnection = useCallback(async () => {
@@ -108,7 +132,8 @@ export function LectureDeck() {
     (async () => {
       setNotesLoading(true);
       try {
-        const notes = await fetchGranolaNotes(selectedFolderId);
+        const idToPass = (selectedFolderId === "all_notes" || selectedFolderId === "all") ? undefined : selectedFolderId;
+        const notes = await fetchGranolaNotes(idToPass);
         if (!cancelled) {
           setNotesByFolder((prev) => ({ ...prev, [selectedFolderId]: notes }));
         }
@@ -288,7 +313,7 @@ export function LectureDeck() {
             </label>
             <select
               value={selectedFolderId}
-              onChange={(e) => setSelectedFolderId(e.target.value)}
+              onChange={(e) => handleFolderSelect(e.target.value)}
               disabled={connStatus !== "connected" || foldersLoading}
               className="w-full mt-1.5 rounded-md bg-input border border-border p-2 text-sm text-foreground focus:outline-none focus:border-indigo-arcade disabled:opacity-50"
             >
