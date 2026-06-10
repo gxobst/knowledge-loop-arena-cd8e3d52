@@ -109,21 +109,28 @@ export function LectureDeck() {
   const checkConnection = useCallback(async () => {
     setConnStatus("checking");
     setConnError(null);
-    const s = await fetchGranolaStatus();
-    
+
+    // Only check for actual Granola-specific keys
     const hasManualKey = !!(
       localStorage.getItem("granola_api_key") ||
-      localStorage.getItem("lectureloop_granola_key") ||
-      localStorage.getItem("lectureloop_ai_settings") ||
-      (typeof window !== "undefined" && (window as any).LOVABLE_API_KEY)
+      localStorage.getItem("lectureloop_granola_key")
     );
 
-    if (s.connected || hasManualKey) {
+    if (hasManualKey) {
+      // Manual key present — mark connected and load folders
+      setConnStatus("connected");
+      void loadFolders();
+      return;
+    }
+
+    // No manual key — try the backend gateway
+    const s = await fetchGranolaStatus();
+    if (s.connected) {
       setConnStatus("connected");
       void loadFolders();
     } else {
       setConnStatus("failed");
-      setConnError(s.reason ?? "No active gateway connection or manually entered API key found.");
+      setConnError(s.reason ?? "No active gateway connection or Granola API key found.");
     }
   }, [loadFolders]);
 

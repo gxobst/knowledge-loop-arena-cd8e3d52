@@ -589,14 +589,17 @@ export async function fetchGranolaStatus(): Promise<{ connected: boolean; reason
       ? (localStorage.getItem('granola_api_key') || localStorage.getItem('lectureloop_granola_key'))
       : null;
     if (manualKey) {
-      return { connected: true };
+      return { connected: true, outcome: "manual_key" };
     }
-    const res = await fetch("/api/granola/status");
-    if (res.ok) {
-      return { connected: true };
+    try {
+      const res = await fetch("/api/granola/status", { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        return { connected: true, outcome: "gateway" };
+      }
+    } catch {
+      // Gateway unreachable — not fatal, fall through
     }
-    const data = await res.json().catch(() => ({}));
-    return { connected: false, reason: data.reason ?? `Status ${res.status}` };
+    return { connected: false, reason: "No Granola API key found and gateway is unavailable." };
   } catch (e) {
     return { connected: false, reason: e instanceof Error ? e.message : String(e) };
   }
@@ -610,18 +613,25 @@ export async function fetchGranolaFolders(): Promise<GranolaFolder[]> {
   const all: GranolaFolder[] = [];
   let cursor: string | undefined;
   let guard = 0;
-  do {
-    const qs = new URLSearchParams({ page_size: "30" });
-    if (cursor) qs.set("cursor", cursor);
-    const url = getGranolaUrl(`/folders?${qs.toString()}`, manualKey);
-    const res = await fetch(url, init);
-    if (!res.ok) throw new Error(`Folders fetch failed: ${res.status}`);
-    const data = await res.json();
-    const folders = (data.folders ?? []) as Array<{ id: string; name: string }>;
-    all.push(...folders.map((f) => ({ id: f.id, name: f.name })));
-    cursor = data.hasMore ? data.cursor : undefined;
-    guard++;
-  } while (cursor && guard < 10);
+  try {
+    do {
+      const qs = new URLSearchParams({ page_size: "30" });
+      if (cursor) qs.set("cursor", cursor);
+      const url = getGranolaUrl(`/folders?${qs.toString()}`, manualKey);
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) {
+        console.warn(`[Granola] Folders endpoint returned ${res.status}, returning empty list`);
+        return all; // Return whatever we have so far (likely empty)
+      }
+      const data = await res.json();
+      const folders = (data.folders ?? []) as Array<{ id: string; name: string }>;
+      all.push(...folders.map((f) => ({ id: f.id, name: f.name })));
+      cursor = data.hasMore ? data.cursor : undefined;
+      guard++;
+    } while (cursor && guard < 10);
+  } catch (e) {
+    console.warn("[Granola] Folders fetch error, returning empty list:", e);
+  }
   return all;
 }
 
@@ -633,45 +643,54 @@ export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[
   const all: GranolaNote[] = [];
   let cursor: string | undefined;
   let guard = 0;
-  do {
-    const qs = new URLSearchParams({ limit: "30", page_size: "30" });
-    if (cursor) qs.set("cursor", cursor);
-    if (folderId) qs.set("folder_id", folderId);
-    
-    let url = getGranolaUrl(`/notes?${qs.toString()}`, manualKey);
-    let res = await fetch(url, init);
-    
-    // Fallback if proxy route fails (e.g. 404) and we don't have a manual key
-    if (!res.ok && !manualKey) {
-      const altUrl = `/api/connectors/granola/meetings?${qs.toString()}`;
-      const altRes = await fetch(altUrl, init);
-      if (altRes.ok) {
-        res = altRes;
-      }
-    }
+  try {
+    do {
+      const qs = new URLSearchParams({ limit: "30", page_size: "30" });
+      if (cursor) qs.set("cursor", cursor);
+      if (folderId) qs.set("folder_id", folderId);
 
-    if (!res.ok) throw new Error(`Notes fetch failed: ${res.status}`);
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
-    all.push(
-      ...list.map((n: any) => ({
-        id: String(n.id ?? crypto.randomUUID()),
-        title: String(n.title ?? "Untitled Meeting"),
-        ai_summary: String(n.ai_summary ?? n.summary ?? ""),
-        transcript: String(n.transcript ?? ""),
-        workspace: String(
-          (n.workspace ||
-          n.workspace_name ||
-          n.workspaceName ||
-          (n.folder as { name?: string } | undefined)?.name) ??
-            n.folder_name ??
-            "General"
-        ),
-      })),
-    );
-    cursor = data.hasMore ? data.cursor : undefined;
-    guard++;
-  } while (cursor && guard < 5);
+      let url = getGranolaUrl(`/notes?${qs.toString()}`, manualKey);
+      let res = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
+
+      // Fallback if proxy route fails (e.g. 404/500) and we don't have a manual key
+      if (!res.ok && !manualKey) {
+        try {
+          const altUrl = `/api/connectors/granola/meetings?${qs.toString()}`;
+          const altRes = await fetch(altUrl, { ...init, signal: AbortSignal.timeout(8000) });
+          if (altRes.ok) res = altRes;
+        } catch {
+          // alt route also unavailable
+        }
+      }
+
+      if (!res.ok) {
+        console.warn(`[Granola] Notes endpoint returned ${res.status}, returning what we have`);
+        return all;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data.notes || data.meetings || []);
+      all.push(
+        ...list.map((n: any) => ({
+          id: String(n.id ?? crypto.randomUUID()),
+          title: String(n.title ?? "Untitled Meeting"),
+          ai_summary: String(n.ai_summary ?? n.summary ?? ""),
+          transcript: String(n.transcript ?? ""),
+          workspace: String(
+            (n.workspace ||
+            n.workspace_name ||
+            n.workspaceName ||
+            (n.folder as { name?: string } | undefined)?.name) ??
+              n.folder_name ??
+              "General"
+          ),
+        })),
+      );
+      cursor = data.hasMore ? data.cursor : undefined;
+      guard++;
+    } while (cursor && guard < 5);
+  } catch (e) {
+    console.warn("[Granola] Notes fetch error, returning what we have:", e);
+  }
   return all;
 }
 
