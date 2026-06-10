@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
 export interface QuizMistake {
   question: string;
@@ -51,49 +51,41 @@ interface Ctx {
 const ArcadeContext = createContext<Ctx | null>(null);
 
 export function ArcadeProvider({ children }: { children: ReactNode }) {
-  const [xp, setXp] = useState(() => {
-    if (typeof window === "undefined") return 120;
-    const val = localStorage.getItem("lectureloop_xp");
-    return val ? parseInt(val, 10) : 120;
-  });
-
-  const [streak, setStreak] = useState(() => {
-    if (typeof window === "undefined") return 3;
-    const val = localStorage.getItem("lectureloop_streak");
-    return val ? parseInt(val, 10) : 3;
-  });
-
-  const [lectures, setLecturesState] = useState<Lecture[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const val = localStorage.getItem("lectureloop_lectures");
-      return val ? JSON.parse(val) : [];
-    } catch {
-      return [];
-    }
-  });
-
+  const [xp, setXp] = useState(120);
+  const [streak, setStreak] = useState(3);
+  const [lectures, setLecturesState] = useState<Lecture[]>([]);
   const [activeLecture, setActiveLecture] = useState<Lecture | null>(null);
+  const [mistakes, setMistakesState] = useState<QuizMistake[]>([]);
+  const [achievements, setAchievements] = useState<Record<string, boolean>>({ "first-quiz": true, "streak-3": true });
 
-  const [mistakes, setMistakesState] = useState<QuizMistake[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const val = localStorage.getItem("lectureloop_mistakes");
-      return val ? JSON.parse(val) : [];
-    } catch {
-      return [];
-    }
-  });
+  useEffect(() => {
+    const savedXp = localStorage.getItem("lectureloop_xp");
+    if (savedXp) setXp(parseInt(savedXp, 10));
 
-  const [achievements, setAchievements] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return { "first-quiz": true, "streak-3": true };
+    const savedStreak = localStorage.getItem("lectureloop_streak");
+    if (savedStreak) setStreak(parseInt(savedStreak, 10));
+
     try {
-      const val = localStorage.getItem("lectureloop_achievements");
-      return val ? JSON.parse(val) : { "first-quiz": true, "streak-3": true };
-    } catch {
-      return { "first-quiz": true, "streak-3": true };
+      const savedLectures = localStorage.getItem("lectureloop_lectures");
+      if (savedLectures) setLecturesState(JSON.parse(savedLectures));
+    } catch (e) {
+      console.error("Failed to parse saved lectures:", e);
     }
-  });
+
+    try {
+      const savedMistakes = localStorage.getItem("lectureloop_mistakes");
+      if (savedMistakes) setMistakesState(JSON.parse(savedMistakes));
+    } catch (e) {
+      console.error("Failed to parse saved mistakes:", e);
+    }
+
+    try {
+      const savedAchievements = localStorage.getItem("lectureloop_achievements");
+      if (savedAchievements) setAchievements(JSON.parse(savedAchievements));
+    } catch (e) {
+      console.error("Failed to parse saved achievements:", e);
+    }
+  }, []);
 
   const addXp = (n: number) => {
     setXp((prev) => {
