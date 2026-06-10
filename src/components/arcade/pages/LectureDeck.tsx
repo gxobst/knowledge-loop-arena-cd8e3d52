@@ -28,6 +28,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Trophy,
+  XCircle,
 } from "lucide-react";
 import { showApiError } from "../ErrorToast";
 import { toast } from "sonner";
@@ -37,12 +39,20 @@ type ConnStatus = "idle" | "checking" | "connected" | "failed";
 export function LectureDeck() {
   const { lectures, activeLecture, setActiveLecture, setLectures } = useArcade();
   
-  // STEP 1: DEFINE THE STATE VARIABLES (EXPLICIT)
-  const [rawNotes, setRawNotes] = useState<any[]>([]);
-  const [workspaces, setWorkspaces] = useState<any[]>([]);
-  const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  // IMPLEMENT THREE-TIER STATE MANAGEMENT
+  // State A: All raw meetings available in your Granola account (hidden from sidebar by default)
+  const [granolaAPIMeetings, setGranolaAPIMeetings] = useState<any[]>([]);
+
+  // State B: Only meetings the user has explicitly selected and imported from the selection pane
+  const [importedRawNotes, setImportedRawNotes] = useState<any[]>([]);
+
+  // State C: Only meetings successfully parsed by the AI (no raw transcripts shown here)
   const [masteredDeck, setMasteredDeck] = useState<any[]>([]);
-  const [showOriginalSource, setShowOriginalSource] = useState(false);
+
+  // UI States
+  const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [showRawDropdown, setShowRawDropdown] = useState(false);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
 
   // Other UI & connection states
@@ -56,6 +66,10 @@ export function LectureDeck() {
   const [showWarningBanner, setShowWarningBanner] = useState(false);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [notesLoading, setNotesLoading] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<"cheat" | "flashcards" | "quiz">("cheat");
+  const [dropdownSelectedId, setDropdownSelectedId] = useState<string>("");
+  const [expandedRawNoteId, setExpandedRawNoteId] = useState<string | null>(null);
 
   const configured = isConfigured(loadSettings());
 
@@ -96,7 +110,7 @@ export function LectureDeck() {
       }
 
       const notes = await fetchGranolaNotes();
-      setRawNotes(notes);
+      setGranolaAPIMeetings(notes);
     } catch (e) {
       console.error("Failed to load Granola data:", e);
     } finally {
@@ -105,13 +119,12 @@ export function LectureDeck() {
     }
   };
 
-  // STEP 2: REFAC-TOR THE INITIAL MOUNT EFFECT (STRICTLY NO AUTO-MOCK)
+  // Initial mount connection check
   useEffect(() => {
     const checkLiveConnection = async () => {
       try {
         const res = await fetch('/api/granola/folders?page_size=30');
         if (res.ok) {
-          // Run live fetch if connected
           fetchGranolaData();
         }
       } catch (e) {
@@ -121,7 +134,7 @@ export function LectureDeck() {
     checkLiveConnection();
   }, []);
 
-  // Connection Checker (Manual or Gateway)
+  // Connection Checker
   const checkConnection = useCallback(async () => {
     setConnStatus("checking");
     setConnError(null);
@@ -169,7 +182,7 @@ export function LectureDeck() {
     }
   }, []);
 
-  // STEP 3: IMPLEMENT THE EXPLICIT "LOAD MOCK DATA" BUTTON HANDLER
+  // Load Sample Mock Data handler (loads samples straight into State A selection dropdown)
   const handleLoadMockData = () => {
     const sampleModules = [
       {
@@ -190,14 +203,12 @@ export function LectureDeck() {
       }
     ];
 
-    // Merge cleanly without wiping out any already imported notes
-    setRawNotes(prev => {
+    setGranolaAPIMeetings(prev => {
       const existingIds = new Set(prev.map(item => item.id));
       const uniqueNewSamples = sampleModules.filter(item => !existingIds.has(item.id));
       return [...prev, ...uniqueNewSamples];
     });
     
-    // Set dropdown to display a mock workspace
     setWorkspaces(prev => {
       if (prev.some(w => w.id === "all")) return prev;
       return [...prev, { id: "all", name: "All Meetings" }];
@@ -206,7 +217,6 @@ export function LectureDeck() {
     toast.success("📚 Sample mock data loaded!");
   };
 
-  // Content-aware fallback generator for error cases
   const fakeFallback = (text: string, titleHint: string, assumedWorkspace = "Custom") => {
     const sentences = text
       .split(/[.!?]+/)
@@ -272,16 +282,43 @@ export function LectureDeck() {
     };
   };
 
-  // STEP 4: IMPLEMENT THE SELECTIVE IMPORT FUNCTION
+  // Import Raw Note from state A selection dropdown to state B (sidebar)
+  const handleImportRawNote = async () => {
+    if (!dropdownSelectedId) return;
+    const meeting = granolaAPIMeetings.find(m => m.id === dropdownSelectedId);
+    if (!meeting) return;
+
+    try {
+      setIsImporting(true);
+      const res = await fetch(`/api/granola/notes/${meeting.id}?include=transcript`).catch(() => null);
+      const detailNote = res && res.ok ? await res.json().catch(() => meeting) : meeting;
+
+      setImportedRawNotes(prev => {
+        if (prev.some(item => item.id === detailNote.id)) return prev;
+        return [...prev, detailNote];
+      });
+
+      setDropdownSelectedId("");
+      toast.success(`📥 Note "${detailNote.title}" imported to raw sidebar!`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to import note.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Analyze raw note from state B, processing via AI and moving into State C (masteredDeck)
   const handleImportAndProcess = async (note: any) => {
     try {
       setIsImporting(true);
       
-      // 1. Fetch full note detail including transcript
-      const res = await fetch(`/api/granola/notes/${note.id}?include=transcript`).catch(() => null);
-      const detailNote = res && res.ok ? await res.json().catch(() => note) : note;
+      let detailNote = note;
+      if (!note.transcript) {
+        const res = await fetch(`/api/granola/notes/${note.id}?include=transcript`).catch(() => null);
+        detailNote = res && res.ok ? await res.json().catch(() => note) : note;
+      }
 
-      // 2. Build rich context payload
       const richContext = `
         LECTURE TITLE: ${detailNote.title}
         FOLDER: ${detailNote.workspace_name || detailNote.workspace || 'General'}
@@ -291,7 +328,6 @@ export function LectureDeck() {
         ${detailNote.transcript || detailNote.text || 'No transcript available.'}
       `;
       
-      // 3. Call gateway
       let parsedData: any;
       try {
         const rawResponse = await callAIGateway(PARSE_PROMPT(richContext), true);
@@ -309,18 +345,18 @@ export function LectureDeck() {
         summary: parsedData.summary,
         flashcards: parsedData.flashcards,
         quiz: parsedData.quiz,
-        notes: detailNote.notes || detailNote.ai_summary || '',       // Preserve original notes
-        transcript: detailNote.transcript || detailNote.text || '', // Preserve original transcript
-        parsed: parsedData // Backwards compatibility for templates
+        notes: detailNote.notes || detailNote.ai_summary || '',
+        transcript: detailNote.transcript || detailNote.text || '',
+        parsed: parsedData
       };
 
-      // 4. Save to mastered deck (prevent duplicates)
       setMasteredDeck(prev => {
         if (prev.some(item => item.id === processedModule.id)) return prev;
         return [...prev, processedModule];
       });
+
+      setImportedRawNotes(prev => prev.filter(item => item.id !== note.id));
       
-      // Set as the active selected study guide
       setSelectedNote(processedModule);
       setSelectedRawNote(null);
       toast.success("🏆 Added to Mastered Deck!");
@@ -394,9 +430,8 @@ export function LectureDeck() {
     }
   }
 
-  // Deletion operations
   const handleDeleteRawNote = (id: string) => {
-    setRawNotes(prev => prev.filter(n => n.id !== id));
+    setImportedRawNotes(prev => prev.filter(n => n.id !== id));
     if (selectedRawNote?.id === id) setSelectedRawNote(null);
   };
 
@@ -407,7 +442,7 @@ export function LectureDeck() {
 
   const handleClearAllRawNotes = () => {
     if (window.confirm("Are you sure you want to clear all raw notes?")) {
-      setRawNotes([]);
+      setImportedRawNotes([]);
       setSelectedRawNote(null);
       toast.success("💥 All raw notes cleared!");
     }
@@ -447,13 +482,17 @@ export function LectureDeck() {
     }
   };
 
-  // Filters unimported notes
-  const filteredRawNotes = rawNotes.filter((n) => {
-    const isProcessed = masteredDeck.some((m) => m.id === n.id || m.title === n.title);
-    if (isProcessed) return false;
-
+  // Sidebar unimported raw list
+  const visibleRawNotes = importedRawNotes.filter((n) => {
     if (!selectedFolderId || selectedFolderId === "all" || selectedFolderId === "all_notes") return true;
     return n.folder_id === selectedFolderId || n.workspace === selectedFolderId || n.workspace_name === selectedFolderId;
+  });
+
+  // Dropdown list selector meetings filter
+  const availableToImport = granolaAPIMeetings.filter((m) => {
+    const isImported = importedRawNotes.some((r) => r.id === m.id);
+    const isMastered = masteredDeck.some((d) => d.id === m.id);
+    return !isImported && !isMastered;
   });
 
   const isMastered = selectedNote
@@ -509,16 +548,16 @@ export function LectureDeck() {
             </select>
           </div>
 
-          {/* UNIMPORTED RAW NOTES */}
+          {/* SIDEBAR "GRANOLA RAW NOTES" */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold uppercase tracking-wider text-amber-arcade flex items-center justify-between gap-1.5 px-1 w-full">
               <span className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
-                Granola Raw Notes ({filteredRawNotes.length})
+                Granola Raw Notes ({visibleRawNotes.length})
               </span>
               <div className="flex items-center gap-2">
                 {notesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-                {filteredRawNotes.length > 0 && (
+                {visibleRawNotes.length > 0 && (
                   <button
                     onClick={handleClearAllRawNotes}
                     className="text-[10px] text-muted-foreground hover:text-destructive uppercase font-bold tracking-wider transition-colors cursor-pointer"
@@ -529,50 +568,76 @@ export function LectureDeck() {
                 )}
               </div>
             </h4>
-            <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-              {filteredRawNotes.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic p-2">
-                  {connStatus === "connected"
-                    ? "No notes in this workspace yet."
-                    : "Connect to Granola or load mock data below."}
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              {visibleRawNotes.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic p-2 leading-relaxed">
+                  No imported notes in sidebar yet. Select a meeting in the dropdown console to import.
                 </p>
               ) : (
-                filteredRawNotes.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`group flex items-center justify-between gap-1 w-full rounded-lg border border-dashed transition-all ${
-                      selectedRawNote?.id === t.id
-                        ? "bg-amber-arcade/20 border-amber-arcade"
-                        : "bg-card/40 border-muted-foreground/30 hover:bg-amber-arcade/10 hover:border-amber-arcade hover:scale-[1.01]"
-                    }`}
-                  >
-                    <button
-                      disabled={loading || isImporting}
-                      onClick={() => handleSelectRawNote(t)}
-                      className="flex-1 text-left p-2.5 flex flex-col gap-1 disabled:opacity-50"
+                visibleRawNotes.map((t) => {
+                  const isExpanded = expandedRawNoteId === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      className={`flex flex-col gap-1 w-full rounded-lg border border-dashed transition-all ${
+                        selectedRawNote?.id === t.id
+                          ? "bg-amber-arcade/20 border-amber-arcade"
+                          : "bg-card/40 border-muted-foreground/30 hover:bg-amber-arcade/10 hover:border-amber-arcade hover:scale-[1.01]"
+                      }`}
                     >
-                      <div className="font-semibold text-foreground group-hover:text-amber-arcade transition-colors line-clamp-1">
-                        {t.title}
+                      <div className="flex items-center justify-between gap-1 w-full">
+                        <button
+                          disabled={loading || isImporting}
+                          onClick={() => handleSelectRawNote(t)}
+                          className="flex-1 text-left p-2.5 flex flex-col gap-0.5 disabled:opacity-50"
+                        >
+                          <div className="font-semibold text-foreground group-hover:text-amber-arcade transition-colors line-clamp-1">
+                            {t.title}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {t.workspace_name || t.workspace}
+                          </div>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedRawNoteId(isExpanded ? null : t.id);
+                            }}
+                            className="text-[10px] text-indigo-arcade hover:underline font-semibold flex items-center gap-0.5 mt-1 cursor-pointer"
+                          >
+                            {isExpanded ? "▲ Hide Raw Text" : "▼ View Raw Text"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRawNote(t.id);
+                          }}
+                          className="p-2 mr-1 text-muted-foreground hover:text-destructive transition-colors rounded hover:bg-destructive/15"
+                          title="Delete note"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <div className="text-[10px] text-muted-foreground flex items-center justify-between w-full">
-                        <span className="line-clamp-1">{t.workspace_name || t.workspace}</span>
-                        <span className="text-amber-arcade font-bold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          View <ArrowRight className="h-2.5 w-2.5" />
-                        </span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteRawNote(t.id);
-                      }}
-                      className="p-2 mr-1 text-muted-foreground hover:text-destructive transition-colors rounded hover:bg-destructive/15"
-                      title="Delete note"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))
+
+                      {isExpanded && (
+                        <div className="px-2.5 pb-2.5 text-left border-t border-dashed border-border pt-2 space-y-2 text-[10px] bg-slate-950/40 rounded-b-lg">
+                          <div>
+                            <span className="font-bold text-muted-foreground uppercase">Raw Notes:</span>
+                            <div className="max-h-20 overflow-y-auto mt-0.5 whitespace-pre-line text-slate-350 scrollbar-thin">
+                              {t.notes || "No notes."}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="font-bold text-muted-foreground uppercase">Raw Transcript:</span>
+                            <div className="max-h-20 overflow-y-auto mt-0.5 whitespace-pre-line text-slate-355 scrollbar-thin">
+                              {t.transcript || "No transcript available."}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -635,8 +700,49 @@ export function LectureDeck() {
 
         {/* MAIN */}
         <div className="space-y-4">
+          {/* THE SELECTION PANE (Import Console) */}
+          <div className="arcade-card p-4 bg-muted/20 border border-border">
+            <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5 mb-2">
+              🔌 Granola Connection Source & Import Console
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-3 items-end">
+              <div className="flex-1 text-left">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                  Select meeting to import from Granola
+                </label>
+                <select
+                  value={dropdownSelectedId}
+                  onChange={(e) => setDropdownSelectedId(e.target.value)}
+                  disabled={availableToImport.length === 0}
+                  className="w-full rounded-md bg-input border border-border p-2 text-sm text-foreground focus:outline-none focus:border-indigo-arcade disabled:opacity-50"
+                >
+                  {availableToImport.length === 0 ? (
+                    <option value="">— No meetings available to import —</option>
+                  ) : (
+                    <>
+                      <option value="">— Select a meeting to import —</option>
+                      {availableToImport.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title} ({m.workspace_name || m.workspace || "General"})
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+              <Button
+                onClick={handleImportRawNote}
+                disabled={!dropdownSelectedId || isImporting}
+                className="bg-indigo-arcade hover:bg-indigo-arcade/80 text-white font-bold h-10 px-5"
+              >
+                {isImporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Import Selected Note
+              </Button>
+            </div>
+          </div>
+
           <div className="arcade-card p-4">
-            <h3 className="font-bold mb-2 text-sm text-foreground">
+            <h3 className="font-bold mb-2 text-sm text-foreground text-left">
               ✍️ Alternative Manual Paste Input
             </h3>
             <Textarea
@@ -662,8 +768,8 @@ export function LectureDeck() {
             </div>
           </div>
 
-          {/* STEP 6: RENDER THE PLACEHOLDER BANNER */}
-          {rawNotes.length === 0 && masteredDeck.length === 0 ? (
+          {/* RENDER PLACEHOLDER, SELECTIVE IMPORT LANDING SCREEN, OR MASTERED STUDY GUIDE */}
+          {granolaAPIMeetings.length === 0 && importedRawNotes.length === 0 && masteredDeck.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-800 rounded-2xl border border-dashed border-slate-700 max-w-lg mx-auto mt-12">
               <span className="text-5xl mb-4">🎮</span>
               <h3 className="text-xl font-bold text-slate-200 mb-2">Ready to study?</h3>
@@ -682,7 +788,7 @@ export function LectureDeck() {
                 Selected: {selectedRawNote.title}
               </h3>
               <p className="text-sm text-muted-foreground max-w-md">
-                This lecture has not been analyzed yet. Click 'Import & Process with AI ⚡' to generate your study arcade.
+                This lecture has not been analyzed yet. Click 'Analyze with AI ⚡' to generate your study arcade.
               </p>
               <div className="bg-muted/40 p-4 rounded-lg w-full text-left max-h-40 overflow-y-auto text-xs border border-border">
                 <strong>AI Summary:</strong>{" "}
@@ -695,102 +801,116 @@ export function LectureDeck() {
               >
                 {isImporting ? (
                   <>
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Importing & Processing...
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Analyzing...
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-5 w-5 mr-2" /> Import & Process with AI ⚡
+                    <Sparkles className="h-5 w-5 mr-2" /> Analyze with AI ⚡
                   </>
                 )}
               </Button>
             </div>
           ) : selectedNote ? (
             <>
-              <div className="arcade-card p-5 border-l-4 border-l-indigo-arcade">
-                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                  <h3 className="font-bold text-lg text-foreground">
-                    🍰 Summary Panel — {selectedNote.title}
+              {/* Tab Selector Buttons */}
+              <div className="flex border-b border-border mb-4">
+                <button
+                  onClick={() => setActiveTab("cheat")}
+                  className={`flex-1 py-2.5 font-bold text-sm border-b-2 transition-all ${
+                    activeTab === "cheat"
+                      ? "border-fuchsia-arcade text-fuchsia-arcade"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  📝 Cheat Sheet
+                </button>
+                <button
+                  onClick={() => setActiveTab("flashcards")}
+                  className={`flex-1 py-2.5 font-bold text-sm border-b-2 transition-all ${
+                    activeTab === "flashcards"
+                      ? "border-fuchsia-arcade text-fuchsia-arcade"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🃏 Flashcards
+                </button>
+                <button
+                  onClick={() => setActiveTab("quiz")}
+                  className={`flex-1 py-2.5 font-bold text-sm border-b-2 transition-all ${
+                    activeTab === "quiz"
+                      ? "border-fuchsia-arcade text-fuchsia-arcade"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🎮 Quiz Arena
+                </button>
+              </div>
+
+              {activeTab === "cheat" && (
+                <div className="arcade-card p-5 border-l-4 border-l-indigo-arcade animate-fade-in">
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <h3 className="font-bold text-lg text-foreground text-left">
+                      🍰 Summary Panel — {selectedNote.title}
+                    </h3>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {selectedNote.parsed?.tags?.map((t: string) => (
+                        <span
+                          key={t}
+                          className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-arcade/20 border border-indigo-arcade/40 text-indigo-arcade"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <Markdown text={selectedNote.summary || selectedNote.parsed?.summary || ""} />
+                  <div className="pt-3 mt-3 border-t border-border/50">
+                    <Button
+                      disabled={isMastered}
+                      onClick={() => handleAddToMasteredDeck(selectedNote)}
+                      className={`w-full py-5 text-sm font-bold uppercase tracking-wider rounded-lg ${
+                        isMastered
+                          ? "bg-emerald-arcade/20 border border-emerald-arcade text-emerald-arcade opacity-80"
+                          : "bg-amber-arcade hover:bg-amber-arcade/80 text-background"
+                      }`}
+                    >
+                      {isMastered ? "Topic Mastered ✔️" : "Add to Mastered Deck 🏆"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "flashcards" && (
+                <div className="arcade-card p-5 animate-fade-in text-left">
+                  <h3 className="font-bold text-lg mb-3 text-foreground">
+                    🃏 Flashcard Arena (Click to flip)
                   </h3>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {selectedNote.parsed?.tags?.map((t: string) => (
-                      <span
-                        key={t}
-                        className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-arcade/20 border border-indigo-arcade/40 text-indigo-arcade"
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {(selectedNote.flashcards || selectedNote.parsed?.flashcards || []).map((f: any, i: number) => (
+                      <div
+                        key={i}
+                        onClick={() => setFlipped((p) => ({ ...p, [i]: !p[i] }))}
+                        className={`flip-card cursor-pointer h-36 ${flipped[i] ? "flipped" : ""}`}
                       >
-                        {t}
-                      </span>
+                        <div className="flip-inner">
+                          <div className="flip-face arcade-card flex items-center justify-center p-4 text-center font-bold text-fuchsia-arcade text-sm bg-card/60">
+                            {f.term}
+                          </div>
+                          <div className="flip-face flip-back arcade-card flex items-center justify-center p-4 text-center text-xs bg-muted/40 text-foreground border-indigo-arcade/50">
+                            {f.definition}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
-                <Markdown text={selectedNote.summary || selectedNote.parsed?.summary || ""} />
-                <div className="pt-3 mt-3 border-t border-border/50">
-                  <Button
-                    disabled={isMastered}
-                    onClick={() => handleAddToMasteredDeck(selectedNote)}
-                    className={`w-full py-5 text-sm font-bold uppercase tracking-wider rounded-lg ${
-                      isMastered
-                        ? "bg-emerald-arcade/20 border border-emerald-arcade text-emerald-arcade opacity-80"
-                        : "bg-amber-arcade hover:bg-amber-arcade/80 text-background"
-                    }`}
-                  >
-                    {isMastered ? "Topic Mastered ✔️" : "Add to Mastered Deck 🏆"}
-                  </Button>
-                </div>
-              </div>
+              )}
 
-              <div className="arcade-card p-5">
-                <h3 className="font-bold text-lg mb-3 text-foreground">
-                  🃏 Flashcard Arena (Click to flip)
-                </h3>
-                <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {(selectedNote.flashcards || selectedNote.parsed?.flashcards || []).map((f: any, i: number) => (
-                    <div
-                      key={i}
-                      onClick={() => setFlipped((p) => ({ ...p, [i]: !p[i] }))}
-                      className={`flip-card cursor-pointer h-36 ${flipped[i] ? "flipped" : ""}`}
-                    >
-                      <div className="flip-inner">
-                        <div className="flip-face arcade-card flex items-center justify-center p-4 text-center font-bold text-fuchsia-arcade text-sm bg-card/60">
-                          {f.term}
-                        </div>
-                        <div className="flip-face flip-back arcade-card flex items-center justify-center p-4 text-center text-xs bg-muted/40 text-foreground border-indigo-arcade/50">
-                          {f.definition}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+              {activeTab === "quiz" && (
+                <div className="arcade-card p-5 animate-fade-in text-left">
+                  <QuizTabModule selectedNote={selectedNote} />
                 </div>
-              </div>
-
-              {/* STEP 5: ADD THE COLLAPSIBLE SOURCE PANEL */}
-              <div className="mt-8 border-t border-slate-700 pt-4">
-                <button
-                  onClick={() => setShowOriginalSource(!showOriginalSource)}
-                  className="flex items-center justify-between w-full p-3 bg-slate-800 rounded-lg hover:bg-slate-750 transition cursor-pointer"
-                >
-                  <span className="font-semibold text-slate-200 flex items-center gap-2">
-                    📄 View Original Source Material (Granola Transcript & Notes)
-                  </span>
-                  <span>{showOriginalSource ? '▲' : '▼'}</span>
-                </button>
-                
-                {showOriginalSource && (
-                  <div className="grid md:grid-cols-2 gap-4 mt-4 text-left">
-                    <div className="flex flex-col gap-2">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Original Notes</span>
-                      <div className="p-3 bg-slate-900 rounded border border-slate-800 h-48 overflow-y-auto text-xs whitespace-pre-line text-slate-300">
-                        {selectedNote.notes || 'No original notes.'}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Full Transcript</span>
-                      <div className="p-3 bg-slate-900 rounded border border-slate-800 h-48 overflow-y-auto text-xs whitespace-pre-line text-slate-300">
-                        {selectedNote.transcript || 'No transcript available.'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </>
           ) : (
             <div className="arcade-card p-12 border-dashed flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/5">
@@ -803,6 +923,115 @@ export function LectureDeck() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuizTabModule({ selectedNote }: { selectedNote: any }) {
+  const { addXp, addMistake, unlock } = useArcade();
+  const [i, setI] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [score, setScore] = useState(0);
+  const [done, setDone] = useState(false);
+
+  const quiz = selectedNote?.quiz || selectedNote?.parsed?.quiz || [];
+
+  if (quiz.length === 0) {
+    return <div className="text-center text-muted-foreground p-4">No quiz questions available.</div>;
+  }
+
+  const q = quiz[i];
+
+  function pick(idx: number) {
+    if (selected !== null) return;
+    setSelected(idx);
+    const correct = idx === q.correct_index;
+    if (correct) {
+      setScore((s) => s + 1);
+    } else {
+      addMistake({
+        question: q.question,
+        selected: q.options[idx],
+        correct: q.options[q.correct_index],
+        lectureTitle: selectedNote!.title,
+      });
+    }
+  }
+
+  function next() {
+    if (i + 1 >= quiz.length) {
+      setDone(true);
+      addXp(50);
+      unlock("quiz-complete");
+      toast.success("🎉 +50 XP! Quiz complete!", { className: "animate-bounce-in" });
+      return;
+    }
+    setI(i + 1);
+    setSelected(null);
+  }
+
+  function reset() {
+    setI(0); setSelected(null); setScore(0); setDone(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center text-xs text-muted-foreground">
+        <h4 className="font-bold text-foreground">🎮 Quiz Arena</h4>
+        <span>Question {i + 1} of {quiz.length}</span>
+      </div>
+
+      {done ? (
+        <div className="text-center p-6 bg-slate-950/30 rounded-lg border border-border">
+          <Trophy className="h-12 w-12 mx-auto text-amber-arcade mb-2" />
+          <h3 className="text-xl font-bold text-slate-200">Victory!</h3>
+          <p className="text-sm mt-1">{score} / {quiz.length} correct</p>
+          <p className="text-emerald-arcade text-lg font-bold mt-2">+50 XP ✨</p>
+          <Button onClick={reset} className="mt-4 bg-fuchsia-arcade hover:bg-fuchsia-arcade/80 text-xs">
+            Play Again
+          </Button>
+        </div>
+      ) : (
+        <div className="p-4 bg-slate-950/20 rounded-lg border border-border space-y-4">
+          <h3 className="font-bold text-base text-foreground">{q.question}</h3>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {q.options.map((o: string, idx: number) => {
+              const isCorrect = idx === q.correct_index;
+              const isSelected = idx === selected;
+              const show = selected !== null;
+              const cls = !show
+                ? "border-border hover:bg-muted/30"
+                : isCorrect
+                ? "border-emerald-arcade bg-emerald-arcade/20 text-emerald-arcade"
+                : isSelected
+                ? "border-destructive bg-destructive/20 text-destructive animate-shake"
+                : "border-border opacity-50";
+              return (
+                <button
+                  key={idx}
+                  disabled={show}
+                  onClick={() => pick(idx)}
+                  className={`p-3 rounded border text-left text-xs transition-all flex items-center gap-2 ${cls}`}
+                >
+                  {show && isCorrect && <CheckCircle2 className="h-4 w-4 text-emerald-arcade animate-bounce-in" />}
+                  {show && isSelected && !isCorrect && <XCircle className="h-4 w-4 text-destructive" />}
+                  <span>{o}</span>
+                </button>
+              );
+            })}
+          </div>
+          {selected !== null && (
+            <div className="p-3 rounded bg-muted/20 text-xs text-muted-foreground">
+              <strong>Explanation:</strong> {q.explanations[selected]}
+            </div>
+          )}
+          {selected !== null && (
+            <Button onClick={next} className="w-full bg-fuchsia-arcade hover:bg-fuchsia-arcade/80 text-xs h-9">
+              {i + 1 >= quiz.length ? "Finish" : "Next →"}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
