@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "LectureLoop Arcade" },
+      { name: "description", content: "Gamify your learning! LectureLoop Arena parses Granola transcripts into study decks with autonomous quizzes, flashcards, and Socratic multi-agent AI debate." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "LectureLoop Arcade" },
+      { property: "og:description", content: "Gamify your learning! LectureLoop Arena parses Granola transcripts into study decks with autonomous quizzes, flashcards, and Socratic multi-agent AI debate." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "LectureLoop Arcade" },
+      { name: "twitter:description", content: "Gamify your learning! LectureLoop Arena parses Granola transcripts into study decks with autonomous quizzes, flashcards, and Socratic multi-agent AI debate." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0ff36650-9520-4e31-933d-3e659859c139/id-preview-35290c07--96d82bb7-8432-4bce-9cf8-25edfe436739.lovable.app-1781133219754.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0ff36650-9520-4e31-933d-3e659859c139/id-preview-35290c07--96d82bb7-8432-4bce-9cf8-25edfe436739.lovable.app-1781133219754.png" },
     ],
     links: [
       {
