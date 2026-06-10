@@ -327,9 +327,14 @@ export function LectureDeck() {
       setIsImporting(true);
       
       let detailNote = note;
-      if (!note.transcript) {
-        const res = await fetch(`/api/granola/notes/${note.id}?include=transcript`).catch(() => null);
-        detailNote = res && res.ok ? await res.json().catch(() => note) : note;
+      const hasInvalidTranscript = typeof note.transcript !== "string" || 
+        note.transcript === "No transcript available." || 
+        note.transcript.includes("[object Object]");
+      if (hasInvalidTranscript) {
+        const detail = await fetchGranolaNoteDetail(note.id).catch(() => null);
+        if (detail) {
+          detailNote = detail;
+        }
       }
 
       const richContext = `

@@ -871,6 +871,44 @@ export async function fetchGranolaFolders(): Promise<GranolaFolder[]> {
   return all;
 }
 
+export function formatGranolaTranscript(n: any): string {
+  if (!n) return "";
+  if (typeof n.transcript === "string") {
+    return n.transcript;
+  }
+  if (Array.isArray(n.transcript)) {
+    return n.transcript
+      .map((item: any) => {
+        const speaker = item.speaker?.diarization_label || 
+          (item.speaker?.source === "microphone" ? "Speaker (Mic)" : item.speaker?.source === "speaker" ? "Speaker (System)" : "Speaker");
+        return `[${speaker}]: ${item.text || ""}`;
+      })
+      .join("\n");
+  }
+  const fallback = n.raw_transcript ?? n.rawTranscript ?? n.content ?? n.body ?? n.notes ?? n.text;
+  if (fallback !== undefined && fallback !== null) {
+    if (typeof fallback === "string") return fallback;
+    if (Array.isArray(fallback)) {
+      return fallback
+        .map((item: any) => {
+          if (typeof item === "string") return item;
+          const speaker = item.speaker?.diarization_label || 
+            (item.speaker?.source === "microphone" ? "Speaker (Mic)" : item.speaker?.source === "speaker" ? "Speaker (System)" : "Speaker");
+          return `[${speaker}]: ${item.text || ""}`;
+        })
+        .join("\n");
+    }
+    return String(fallback);
+  }
+  return "";
+}
+
+export function formatGranolaSummary(n: any): string {
+  if (!n) return "";
+  const summaryVal = n.summary_markdown ?? n.summary_text ?? n.ai_summary ?? n.summary ?? n.text ?? n.notes ?? "";
+  return typeof summaryVal === "string" ? summaryVal : String(summaryVal);
+}
+
 export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[]> {
   const manualKey = typeof window !== 'undefined'
     ? (localStorage.getItem('granola_api_key') || localStorage.getItem('lectureloop_granola_key'))
@@ -883,9 +921,7 @@ export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[
     do {
       const qs = new URLSearchParams({
         limit: "30",
-        page_size: "30",
-        include: "transcript,raw_transcript",
-        expand: "transcript,raw_transcript"
+        page_size: "30"
       });
       if (cursor) qs.set("cursor", cursor);
       if (folderId) qs.set("folder_id", folderId);
@@ -914,8 +950,8 @@ export async function fetchGranolaNotes(folderId?: string): Promise<GranolaNote[
         ...list.map((n: any) => ({
           id: String(n.id ?? crypto.randomUUID()),
           title: String(n.title ?? "Untitled Meeting"),
-          ai_summary: String(n.ai_summary ?? n.summary ?? n.text ?? ""),
-          transcript: String(n.raw_transcript ?? n.rawTranscript ?? n.transcript ?? n.content ?? n.body ?? n.notes ?? n.text ?? ""),
+          ai_summary: formatGranolaSummary(n),
+          transcript: formatGranolaTranscript(n),
           workspace: String(
             (n.workspace ||
             n.workspace_name ||
@@ -942,18 +978,20 @@ export async function fetchGranolaNoteDetail(id: string): Promise<GranolaNote | 
   const init = getGranolaRequestInit(manualKey);
   try {
     const qs = new URLSearchParams({
-      include: "transcript,raw_transcript",
-      expand: "transcript,raw_transcript"
+      include: "transcript"
     });
     const url = getGranolaUrl(`/notes/${encodeURIComponent(id)}?${qs.toString()}`, manualKey);
     const res = await fetch(url, init);
     if (!res.ok) return null;
-    const n = await res.json();
+    let n = await res.json();
+    if (n && n.note) {
+      n = n.note;
+    }
     return {
       id: String(n.id ?? id),
       title: String(n.title ?? "Untitled"),
-      ai_summary: String(n.ai_summary ?? n.summary ?? n.text ?? ""),
-      transcript: String(n.raw_transcript ?? n.rawTranscript ?? n.transcript ?? n.content ?? n.body ?? n.notes ?? n.text ?? ""),
+      ai_summary: formatGranolaSummary(n),
+      transcript: formatGranolaTranscript(n),
       workspace: String((n.folder as { name?: string } | undefined)?.name ?? n.folder_name ?? n.workspace ?? "General"),
     };
   } catch {
