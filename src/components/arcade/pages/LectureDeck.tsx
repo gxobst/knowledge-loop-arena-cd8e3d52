@@ -110,12 +110,19 @@ export function LectureDeck() {
     setConnStatus("checking");
     setConnError(null);
     const s = await fetchGranolaStatus();
-    if (s.connected) {
+    
+    const hasManualKey = !!(
+      localStorage.getItem("lectureloop_granola_key") ||
+      localStorage.getItem("lectureloop_ai_settings") ||
+      (typeof window !== "undefined" && (window as any).LOVABLE_API_KEY)
+    );
+
+    if (s.connected || hasManualKey) {
       setConnStatus("connected");
       void loadFolders();
     } else {
       setConnStatus("failed");
-      setConnError(s.reason ?? "Unknown error");
+      setConnError(s.reason ?? "No active gateway connection or manually entered API key found.");
     }
   }, [loadFolders]);
 

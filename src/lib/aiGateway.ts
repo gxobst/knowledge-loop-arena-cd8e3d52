@@ -384,8 +384,11 @@ export const FALLBACK_MOCK_NOTES: GranolaNote[] = [
 export async function fetchGranolaStatus(): Promise<{ connected: boolean; reason?: string | null; outcome?: string }> {
   try {
     const res = await fetch("/api/granola/status");
-    if (!res.ok) return { connected: false, reason: `Status ${res.status}` };
-    return await res.json();
+    if (res.ok) {
+      return { connected: true };
+    }
+    const data = await res.json().catch(() => ({}));
+    return { connected: false, reason: data.reason ?? `Status ${res.status}` };
   } catch (e) {
     return { connected: false, reason: e instanceof Error ? e.message : String(e) };
   }
