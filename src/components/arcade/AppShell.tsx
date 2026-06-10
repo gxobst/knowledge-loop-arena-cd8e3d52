@@ -17,9 +17,9 @@ const NAV: { id: Page; label: string; icon: typeof Home }[] = [
   { id: "dashboard", label: "🏠 Dashboard", icon: Home },
   { id: "deck", label: "📚 Lecture Deck", icon: BookOpen },
   { id: "arcade", label: "🎮 Arcade Arena", icon: Gamepad2 },
-  { id: "socratic", label: "Socratic Debate", icon: MessageSquare },
-  { id: "architect", label: "Curriculum Architect", icon: Brain },
-  { id: "critique", label: "Critique Sandbox", icon: FileCheck2 },
+  { id: "socratic", label: "🗣️ Socratic Debate", icon: MessageSquare },
+  { id: "architect", label: "🧠 Curriculum Architect", icon: Brain },
+  { id: "critique", label: "📝 Critique Sandbox", icon: FileCheck2 },
   { id: "achievements", label: "🏆 Achievements", icon: Trophy },
 ];
 

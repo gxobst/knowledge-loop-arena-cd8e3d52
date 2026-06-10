@@ -275,71 +275,298 @@ export async function callAIGateway(prompt: string, isJSONMode = false): Promise
   return getFrictionlessDemoData(prompt, isJSONMode);
 }
 
+// ---- Content-aware demo data builders ----
+
+const SUBJECT_FLASHCARDS: Record<string, { term: string; definition: string }[]> = {
+  biology: [
+    { term: "Photosynthesis", definition: "The process by which green plants convert sunlight, CO₂, and water into glucose and oxygen using chlorophyll." },
+    { term: "Chlorophyll", definition: "The green pigment in chloroplasts that absorbs sunlight to drive the light reactions of photosynthesis." },
+    { term: "Calvin Cycle", definition: "The light-independent stage of photosynthesis where CO₂ is fixed into organic sugar molecules (G3P)." },
+    { term: "Stomata", definition: "Tiny pores on leaf surfaces that regulate gas exchange (CO₂ in, O₂ out) and water vapor transpiration." },
+    { term: "ATP (Adenosine Triphosphate)", definition: "The primary energy currency molecule of cells, produced during light reactions and used in the Calvin Cycle." },
+    { term: "Cellular Respiration", definition: "The metabolic process that breaks down glucose to produce ATP, releasing CO₂ and water as byproducts." },
+    { term: "DNA (Deoxyribonucleic Acid)", definition: "A double-helix molecule carrying the genetic instructions for growth, development, and reproduction of organisms." },
+    { term: "Mitosis", definition: "A type of cell division producing two genetically identical daughter cells from a single parent cell." },
+  ],
+  economics: [
+    { term: "Inflation", definition: "A sustained increase in the general price level of goods and services, reducing purchasing power over time." },
+    { term: "GDP (Gross Domestic Product)", definition: "The total monetary value of all finished goods and services produced within a country's borders in a given period." },
+    { term: "Fiscal Policy", definition: "Government use of taxation and spending to influence economic conditions, aggregate demand, and employment." },
+    { term: "Monetary Policy", definition: "Central bank actions—adjusting interest rates and money supply—to control inflation and stabilize currency." },
+    { term: "Supply & Demand", definition: "The economic model where prices are determined by the relationship between product availability and consumer desire." },
+    { term: "Opportunity Cost", definition: "The value of the next-best alternative forgone when making a choice between scarce resources." },
+    { term: "Consumer Price Index (CPI)", definition: "A measure tracking the average change in prices paid by consumers for a basket of goods and services over time." },
+    { term: "Trade Deficit", definition: "An economic condition where a country's imports exceed its exports, resulting in a negative balance of trade." },
+  ],
+  art: [
+    { term: "Linear Perspective", definition: "A mathematical system for creating the illusion of depth on a flat surface, using converging lines to a vanishing point." },
+    { term: "Chiaroscuro", definition: "The use of strong contrasts between light and dark to give the illusion of volume and three-dimensionality in painting." },
+    { term: "Humanism", definition: "A Renaissance intellectual movement emphasizing human potential, classical learning, and secular subjects in art." },
+    { term: "Fresco", definition: "A technique of painting on freshly laid wet plaster, allowing pigments to become part of the wall surface." },
+    { term: "Iconography", definition: "The study and interpretation of symbolic imagery, themes, and subjects in visual art." },
+    { term: "Sfumato", definition: "A painting technique using subtle gradations of tone and color to blur outlines, creating a smoky atmospheric effect (pioneered by da Vinci)." },
+    { term: "Baroque", definition: "An ornate artistic style (1600s–1700s) characterized by dramatic lighting, rich color, emotional intensity, and grandeur." },
+    { term: "Composition", definition: "The arrangement of visual elements within an artwork to create a unified, balanced, and aesthetically pleasing whole." },
+  ],
+  cs: [
+    { term: "Declarative Knowledge", definition: "Statements of truth explaining 'what is'—facts, definitions, or mathematical formulas without procedural steps." },
+    { term: "Imperative Knowledge", definition: "A recipe, procedure, or sequence of step-by-step instructions showing 'how to' compute a result." },
+    { term: "Variable Binding", definition: "Associating a variable name in a namespace with a specific address in memory containing a data object." },
+    { term: "Type Casting", definition: "Explicitly converting a value from one data type to another (e.g., float('3.14') converts string to float)." },
+    { term: "Loop Termination", definition: "The logical condition under which a repeating sequence (loop) halts execution to prevent infinite iteration." },
+    { term: "Algorithm", definition: "A finite, well-defined sequence of computational steps that transforms input into a desired output." },
+    { term: "Recursion", definition: "A technique where a function calls itself with modified arguments, approaching a base case to solve problems by decomposition." },
+    { term: "Big-O Notation", definition: "A mathematical notation describing the upper bound of an algorithm's time or space complexity as input grows." },
+  ],
+};
+
+const SUBJECT_QUIZZES: Record<string, { question: string; options: string[]; correct_index: number; explanations: string[] }[]> = {
+  biology: [
+    {
+      question: "What is the primary role of chlorophyll in photosynthesis?",
+      options: ["Absorb sunlight energy to drive light reactions", "Fix CO₂ into glucose during the Calvin Cycle", "Transport water from roots to leaves", "Produce ATP in the mitochondria"],
+      correct_index: 0,
+      explanations: ["Correct! Chlorophyll absorbs light energy that powers the light-dependent reactions.", "Incorrect. CO₂ fixation is done by RuBisCO, not chlorophyll.", "Incorrect. Water transport is handled by xylem vessels.", "Incorrect. Mitochondria produce ATP via cellular respiration, not photosynthesis."],
+    },
+    {
+      question: "What gas do plants release as a byproduct of photosynthesis?",
+      options: ["Carbon dioxide", "Nitrogen", "Oxygen", "Hydrogen"],
+      correct_index: 2,
+      explanations: ["Incorrect. CO₂ is absorbed, not released.", "Incorrect. Nitrogen is not involved.", "Correct! O₂ is released as a byproduct of splitting water molecules.", "Incorrect. Hydrogen atoms are used to build glucose."],
+    },
+  ],
+  economics: [
+    {
+      question: "What is the primary goal of fiscal policy?",
+      options: ["Influence aggregate demand through government spending and taxation", "Adjust interest rates to control money supply", "Regulate international trade tariffs only", "Set minimum wage levels nationwide"],
+      correct_index: 0,
+      explanations: ["Correct! Fiscal policy uses spending and taxes to influence economic activity.", "Incorrect. Interest rates are adjusted through monetary policy by central banks.", "Incorrect. Trade regulation is only one narrow aspect, not the primary goal.", "Incorrect. Minimum wage is a labor policy, not fiscal policy."],
+    },
+    {
+      question: "What does GDP measure?",
+      options: ["Government tax revenue", "Total value of goods and services produced in a country", "National debt level", "Average household income"],
+      correct_index: 1,
+      explanations: ["Incorrect. Tax revenue is just one component.", "Correct! GDP measures the total monetary value of all finished goods and services produced domestically.", "Incorrect. National debt is a separate metric.", "Incorrect. Household income is measured by different indicators."],
+    },
+  ],
+  art: [
+    {
+      question: "What artistic innovation did linear perspective introduce?",
+      options: ["A mathematical system for creating depth illusion on flat surfaces", "A method for mixing oil-based pigments", "A technique for carving marble sculptures", "A system for cataloging Renaissance artworks"],
+      correct_index: 0,
+      explanations: ["Correct! Linear perspective uses converging lines and vanishing points to simulate three-dimensional depth.", "Incorrect. Pigment mixing is unrelated to perspective.", "Incorrect. Sculpture techniques are separate from perspective drawing.", "Incorrect. Cataloging is art history methodology, not a visual technique."],
+    },
+    {
+      question: "What is chiaroscuro?",
+      options: ["A type of marble used in Renaissance sculpture", "The use of strong light-dark contrasts to create volume", "A method of gold leaf application", "The study of symbolic imagery in art"],
+      correct_index: 1,
+      explanations: ["Incorrect. Chiaroscuro is a painting technique.", "Correct! Chiaroscuro uses dramatic light and shadow to give the illusion of three-dimensional form.", "Incorrect. Gold leaf application is a different technique called gilding.", "Incorrect. That describes iconography."],
+    },
+  ],
+  cs: [
+    {
+      question: "What is the primary difference between declarative and imperative knowledge?",
+      options: ["Declarative describes what is true; imperative describes the steps to compute it.", "Declarative uses loops; imperative is strictly declarative.", "Declarative is compiled; imperative is interpreted.", "Declarative is mathematical; imperative is only conceptual."],
+      correct_index: 0,
+      explanations: ["Correct! Declarative focuses on truth/facts, while imperative focuses on recipes/procedures.", "Incorrect. Loops are part of imperative control flow.", "Incorrect. Both types of knowledge can exist in any language environment.", "Incorrect. Declarative is not limited to math, and imperative is fully executable."],
+    },
+    {
+      question: "What happens during variable binding in Python?",
+      options: ["A copy of the object is created in a local directory.", "A name is bound to a specific memory location/object reference.", "The computer compiles code to native assembly language.", "A loop is instantly initialized."],
+      correct_index: 1,
+      explanations: ["Incorrect. Objects are not copied during simple binding.", "Correct! Binding associates a name with an object in memory.", "Incorrect. Python is generally interpreted or byte-compiled.", "Incorrect. Loops are unrelated to namespace bindings."],
+    },
+  ],
+};
+
+/** Extract keywords from prompt to pick the most relevant flashcards */
+function pickRelevantFlashcards(prompt: string, pool: { term: string; definition: string }[], count = 5): { term: string; definition: string }[] {
+  const lc = prompt.toLowerCase();
+  // Score each flashcard by how many of its keywords appear in the prompt
+  const scored = pool.map((fc) => {
+    const words = fc.term.toLowerCase().split(/\s+/).concat(
+      fc.definition.toLowerCase().split(/\s+/).filter(w => w.length > 4)
+    );
+    const score = words.filter(w => lc.includes(w)).length;
+    return { fc, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  // Always return at least `count` items — top scored, then fill from pool
+  const picked = scored.slice(0, count).map(s => s.fc);
+  return picked;
+}
+
+function buildContextualSummary(prompt: string, subject: string): string {
+  // Extract the first few meaningful sentences from the prompt as basis
+  const contentSection = prompt
+    .replace(/^.*?Lecture notes:\s*"""/s, "")
+    .replace(/"""$/, "")
+    .replace(/^Summary:\s*/i, "")
+    .replace(/\nTranscript:\s*/i, " ")
+    .trim();
+
+  const sentences = contentSection
+    .split(/[.!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 15)
+    .slice(0, 5);
+
+  if (sentences.length >= 2) {
+    const emojis = ["🧠", "📦", "🔄", "⚙️", "🎯"];
+    const bullets = sentences.map((s, i) => `- ${emojis[i % emojis.length]} **${s.split(/[,;]/)[0].trim()}**: ${s}`);
+    return `### 🚀 Key Takeaways — ${subject}\n${bullets.join("\n")}`;
+  }
+
+  return `### 🚀 Key Takeaways — ${subject}\n- 🧠 **Core Concepts**: ${contentSection.slice(0, 200)}...\n- 📦 **Application**: Key principles from this ${subject.toLowerCase()} topic are essential for deeper study.\n- 🔄 **Connections**: These ideas link to broader themes in ${subject}.`;
+}
+
+function buildContextualFlashcards(prompt: string, subject: string): { term: string; definition: string }[] {
+  const pool = SUBJECT_FLASHCARDS[subject] ?? SUBJECT_FLASHCARDS.cs;
+  return pickRelevantFlashcards(prompt, pool, 5);
+}
+
+function buildContextualQuiz(prompt: string, subject: string): { question: string; options: string[]; correct_index: number; explanations: string[] }[] {
+  const pool = SUBJECT_QUIZZES[subject] ?? SUBJECT_QUIZZES.cs;
+  const lc = prompt.toLowerCase();
+  // Score and pick most relevant quizzes
+  const scored = pool.map((q) => {
+    const qWords = q.question.toLowerCase().split(/\s+/);
+    const score = qWords.filter(w => w.length > 3 && lc.includes(w)).length;
+    return { q, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 2).map(s => s.q);
+}
+
+/** Generic fallback: extract real terms from the prompt when no subject matches */
+function buildGenericDemoFromContent(prompt: string): object {
+  // Strip prompt wrapper to get raw content
+  const content = prompt
+    .replace(/^.*?Lecture notes:\s*"""/s, "")
+    .replace(/"""$/, "")
+    .replace(/^Summary:\s*/i, "")
+    .replace(/\nTranscript:\s*/i, " ")
+    .trim();
+
+  // Extract capitalized terms and key phrases
+  const termMatches = content.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,3}\b/g) ?? [];
+  const uniqueTerms = [...new Set(termMatches)].filter(t => t.length > 3).slice(0, 6);
+
+  // Extract sentences for definitions
+  const sentences = content.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
+
+  const flashcards = uniqueTerms.map((term, i) => ({
+    term,
+    definition: sentences[i] ? sentences[i].slice(0, 150) + (sentences[i].length > 150 ? "…" : "") : `A key concept discussed in this lecture relating to ${term.toLowerCase()}.`,
+  }));
+
+  // Ensure at least 3 flashcards
+  if (flashcards.length < 3) {
+    const fallbackTerms = ["Key Concept", "Core Principle", "Main Takeaway"];
+    for (let i = flashcards.length; i < 3; i++) {
+      flashcards.push({
+        term: fallbackTerms[i] ?? `Concept ${i + 1}`,
+        definition: sentences[i] ?? `An important idea from this lecture material.`,
+      });
+    }
+  }
+
+  // Detect subject from content
+  const lc = content.toLowerCase();
+  let subject = "General Studies";
+  if (lc.includes("comput") || lc.includes("algorithm") || lc.includes("code")) subject = "Computer Science";
+  else if (lc.includes("cell") || lc.includes("organism") || lc.includes("biolog")) subject = "Biology";
+  else if (lc.includes("econom") || lc.includes("market") || lc.includes("price")) subject = "Economics";
+  else if (lc.includes("paint") || lc.includes("sculpt") || lc.includes("art")) subject = "Art History";
+
+  // Build a quiz from the extracted content
+  const quizQuestion = flashcards.length >= 2
+    ? `Which of the following best describes "${flashcards[0].term}"?`
+    : "What is a central theme of this lecture?";
+
+  return {
+    subject,
+    difficulty: "Intermediate" as const,
+    tags: uniqueTerms.slice(0, 3).map(t => t.toLowerCase().replace(/\s+/g, "-")),
+    summary: buildContextualSummary(prompt, subject),
+    flashcards,
+    quiz: [{
+      question: quizQuestion,
+      options: [
+        flashcards[0]?.definition?.slice(0, 80) ?? "The primary concept discussed",
+        "An unrelated mathematical theorem",
+        "A historical event from the 18th century",
+        "None of the above",
+      ],
+      correct_index: 0,
+      explanations: [
+        "Correct! This matches the lecture content.",
+        "Incorrect. This is not relevant to the topic.",
+        "Incorrect. The lecture covers different material.",
+        "Incorrect. The first option accurately describes this concept.",
+      ],
+    }],
+  };
+}
+
 function getFrictionlessDemoData(prompt: string, isJSONMode: boolean): string {
   const lowercasePrompt = prompt.toLowerCase();
 
   if (isJSONMode || lowercasePrompt.includes("subject") || lowercasePrompt.includes("flashcards") || lowercasePrompt.includes("lecture notes")) {
-    let subject = "Computer Science";
-    if (lowercasePrompt.includes("photosynthesis") || lowercasePrompt.includes("biology")) {
-      subject = "Biology";
-    } else if (lowercasePrompt.includes("macroeconomics") || lowercasePrompt.includes("inflation")) {
-      subject = "Economics";
-    } else if (lowercasePrompt.includes("art") || lowercasePrompt.includes("renaissance")) {
-      subject = "Art History";
+    // Detect subject from actual content
+    const subjectDemos: Record<string, () => object> = {
+      biology: () => ({
+        subject: "Biology",
+        difficulty: "Intermediate",
+        tags: ["biology", "cells", "life-science"],
+        summary: buildContextualSummary(prompt, "Biology"),
+        flashcards: buildContextualFlashcards(prompt, "biology"),
+        quiz: buildContextualQuiz(prompt, "biology"),
+      }),
+      economics: () => ({
+        subject: "Economics",
+        difficulty: "Intermediate",
+        tags: ["economics", "markets", "policy"],
+        summary: buildContextualSummary(prompt, "Economics"),
+        flashcards: buildContextualFlashcards(prompt, "economics"),
+        quiz: buildContextualQuiz(prompt, "economics"),
+      }),
+      art: () => ({
+        subject: "Art History",
+        difficulty: "Intermediate",
+        tags: ["art", "history", "culture"],
+        summary: buildContextualSummary(prompt, "Art History"),
+        flashcards: buildContextualFlashcards(prompt, "art"),
+        quiz: buildContextualQuiz(prompt, "art"),
+      }),
+      cs: () => ({
+        subject: "Computer Science",
+        difficulty: "Intermediate",
+        tags: ["computation", "programming", "mit-cs"],
+        summary: buildContextualSummary(prompt, "Computer Science"),
+        flashcards: buildContextualFlashcards(prompt, "cs"),
+        quiz: buildContextualQuiz(prompt, "cs"),
+      }),
+    };
+
+    // Match subject from prompt content
+    let factory: (() => object) | undefined;
+    if (lowercasePrompt.includes("photosynthesis") || lowercasePrompt.includes("biology") || lowercasePrompt.includes("chloro") || lowercasePrompt.includes("cell") || lowercasePrompt.includes("dna") || lowercasePrompt.includes("organism")) {
+      factory = subjectDemos.biology;
+    } else if (lowercasePrompt.includes("economics") || lowercasePrompt.includes("inflation") || lowercasePrompt.includes("macroeconomics") || lowercasePrompt.includes("gdp") || lowercasePrompt.includes("fiscal") || lowercasePrompt.includes("monetary")) {
+      factory = subjectDemos.economics;
+    } else if (lowercasePrompt.includes("art") || lowercasePrompt.includes("renaissance") || lowercasePrompt.includes("painting") || lowercasePrompt.includes("sculpture") || lowercasePrompt.includes("perspective")) {
+      factory = subjectDemos.art;
+    } else if (lowercasePrompt.includes("variable") || lowercasePrompt.includes("loop") || lowercasePrompt.includes("python") || lowercasePrompt.includes("algorithm") || lowercasePrompt.includes("function") || lowercasePrompt.includes("computation")) {
+      factory = subjectDemos.cs;
     }
 
-    const demoJSON = {
-      subject: subject,
-      difficulty: "Intermediate",
-      tags: ["computation", "programming", "mit-cs"],
-      summary: `### 🚀 Key Takeaways from MIT CS 6.100L
-- 🧠 **Declarative vs. Imperative Knowledge**: Declarative knowledge refers to statements of truth (e.g., *squaring a number x is finding y such that y*y = x*). Imperative knowledge is a recipe or algorithm (e.g., *a sequence of steps to find the square root of x*).
-- 📦 **Variables and Binding**: A variable name is a handle that binds to an object in computer memory. Reassigning a variable changes the binding reference, not the object itself.
-- 🔄 **Loops and Control Flow**: Loops allow code to repeat sequences based on logical conditions. *While* loops continue until a condition becomes false, while *For* loops iterate over pre-defined ranges.
-- ⚙️ **Casting & Type Conversions**: Converting one data type to another (e.g., string to float via \`float("3.14")\`) is casting. It is crucial for preventing runtime errors during math operations.`,
-      flashcards: [
-        { term: "Declarative Knowledge", definition: "Statements of truth explaining 'what is'. For example, describing the mathematical formula for a circle." },
-        { term: "Imperative Knowledge", definition: "A recipe, procedure, or sequence of instructions showing 'how to' compute a result." },
-        { term: "Variable Binding", definition: "Associating a variable name in a namespace with a specific address in memory containing an object." },
-        { term: "Type Casting", definition: "Explicitly converting a value from one data type to another, such as float to integer." },
-        { term: "Loop Termination", definition: "The condition under which a repeating sequence (loop) halts to prevent infinite execution." }
-      ],
-      quiz: [
-        {
-          question: "What is the primary difference between declarative and imperative knowledge?",
-          options: [
-            "Declarative describes what is true; imperative describes the steps to compute it.",
-            "Declarative uses loops; imperative is strictly declarative.",
-            "Declarative is compiled; imperative is interpreted.",
-            "Declarative is mathematical; imperative is only conceptual."
-          ],
-          correct_index: 0,
-          explanations: [
-            "Correct! Declarative focuses on truth/facts, while imperative focuses on recipes/procedures.",
-            "Incorrect. Loops are part of imperative control flow.",
-            "Incorrect. Both types of knowledge can exist in any language environment.",
-            "Incorrect. Declarative is not limited to math, and imperative is fully executable."
-          ]
-        },
-        {
-          question: "What happens during variable binding in Python?",
-          options: [
-            "A copy of the object is created in a local directory.",
-            "A name is bound to a specific memory location/object reference.",
-            "The computer compiles code to native assembly language.",
-            "A loop is instantly initialized."
-          ],
-          correct_index: 1,
-          explanations: [
-            "Incorrect. Objects are not copied during simple binding.",
-            "Correct! Binding associates a name with an object in memory.",
-            "Incorrect. Python is generally interpreted or byte-compiled.",
-            "Incorrect. Loops are unrelated to namespace bindings."
-          ]
-        }
-      ]
-    };
-    return JSON.stringify(demoJSON);
+    if (factory) {
+      return JSON.stringify(factory());
+    }
+
+    // Generic fallback — extract terms from the actual prompt content
+    return JSON.stringify(buildGenericDemoFromContent(prompt));
   }
 
   if (lowercasePrompt.includes("dr. analogy") || lowercasePrompt.includes(" eccentrically ") || lowercasePrompt.includes(" eccentric professor ")) {

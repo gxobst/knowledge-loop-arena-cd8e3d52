@@ -168,8 +168,14 @@ export function LectureDeck() {
   }, [connStatus, selectedFolderId, notesByFolder]);
 
   const liveNotes = selectedFolderId ? notesByFolder[selectedFolderId] ?? [] : [];
-  const visibleRawNotes: GranolaNote[] =
-    connStatus === "connected" ? liveNotes : mockNotes;
+  // Always combine live + mock notes, deduplicating by id
+  const visibleRawNotes: GranolaNote[] = (() => {
+    const combined = [...liveNotes];
+    for (const m of mockNotes) {
+      if (!combined.some((n) => n.id === m.id)) combined.push(m);
+    }
+    return combined;
+  })();
 
   // Workspace name for display
   const selectedFolderName =
@@ -182,17 +188,53 @@ export function LectureDeck() {
       if (!merged.some((n) => n.id === m.id || n.title === m.title)) merged.push(m);
     });
     saveMockNotes(merged);
+
+    // Also inject into the notesByFolder so they show up when connected
+    if (selectedFolderId) {
+      setNotesByFolder((prev) => {
+        const existing = prev[selectedFolderId] ?? [];
+        const combined = [...existing];
+        for (const m of merged) {
+          if (!combined.some((n) => n.id === m.id)) combined.push(m);
+        }
+        return { ...prev, [selectedFolderId]: combined };
+      });
+    }
     toast.success("📚 Sample mock data loaded!");
   };
 
   const handleDeleteRawNote = (id: string) => {
     saveMockNotes(mockNotes.filter((n) => n.id !== id));
+    setNotesByFolder((prev) => {
+      const updated = { ...prev };
+      for (const folderId in updated) {
+        updated[folderId] = updated[folderId].filter((n) => n.id !== id);
+      }
+      return updated;
+    });
     if (selectedRawNote?.id === id) setSelectedRawNote(null);
   };
 
   const handleDeleteMasteredNote = (id: string) => {
     setLectures(lectures.filter((l) => l.id !== id));
     if (activeLecture?.id === id) setActiveLecture(null);
+  };
+
+  const handleClearAllRawNotes = () => {
+    if (window.confirm("Are you sure you want to clear all raw notes?")) {
+      saveMockNotes([]);
+      setNotesByFolder({});
+      setSelectedRawNote(null);
+      toast.success("💥 All raw notes cleared!");
+    }
+  };
+
+  const handleClearAllMasteredNotes = () => {
+    if (window.confirm("Are you sure you want to clear all mastered notes from the deck?")) {
+      setLectures([]);
+      setActiveLecture(null);
+      toast.success("💥 Mastered deck cleared!");
+    }
   };
 
   // ---- AI parse ----
@@ -203,24 +245,70 @@ export function LectureDeck() {
     }
     setLoading(true);
 
-    const fakeFallback = (): ParsedLecture => ({
-      subject: assumedWorkspace,
-      difficulty: "Intermediate",
-      tags: ["imported", assumedWorkspace.toLowerCase().replace(/\s+/g, "-")],
-      summary: `- 📝 **Mock summary** for *${titleHint}*\n- 🔌 Configure AI Engine to process live tokens.`,
-      flashcards: [
-        { term: "Core Concept", definition: `Primary takeaway from ${titleHint}.` },
-        { term: "Reference Term", definition: "Placeholder offline definition." },
-      ],
-      quiz: [
-        {
-          question: `Which topic best summarizes ${titleHint}?`,
-          options: [assumedWorkspace, "Option A", "Option B", "None"],
-          correct_index: 0,
-          explanations: ["Correct.", "Incorrect.", "Incorrect.", "Incorrect."],
-        },
-      ],
-    });
+    const fakeFallback = (): ParsedLecture => {
+      // Extract real sentences from the content for meaningful flashcards
+      const sentences = text
+        .split(/[.!?]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 20);
+      const terms = text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2}\b/g) ?? [];
+      const uniqueTerms = [...new Set(terms)].filter((t) => t.length > 3).slice(0, 5);
+
+      const flashcards =
+        uniqueTerms.length >= 2
+          ? uniqueTerms.map((term, i) => ({
+              term,
+              definition:
+                sentences[i]?.slice(0, 140) ??
+                `A concept from ${titleHint} relating to ${term.toLowerCase()}.`,
+            }))
+          : [
+              {
+                term: titleHint.split(/\s+/).slice(0, 3).join(" "),
+                definition: sentences[0]?.slice(0, 140) ?? `Primary takeaway from ${titleHint}.`,
+              },
+              {
+                term: "Key Insight",
+                definition: sentences[1]?.slice(0, 140) ?? `An important concept discussed in this material.`,
+              },
+              {
+                term: "Application",
+                definition: sentences[2]?.slice(0, 140) ?? `How these ideas connect to the broader field of ${assumedWorkspace}.`,
+              },
+            ];
+
+      return {
+        subject: assumedWorkspace,
+        difficulty: "Intermediate",
+        tags: ["imported", assumedWorkspace.toLowerCase().replace(/\s+/g, "-")],
+        summary:
+          sentences.length >= 2
+            ? sentences
+                .slice(0, 4)
+                .map((s, i) => `- ${["🧠", "📦", "🔄", "⚙️"][i % 4]} ${s}`)
+                .join("\n")
+            : `- 📝 **Summary** for *${titleHint}*\n- 🔌 Configure AI Engine to generate richer analysis.`,
+        flashcards,
+        quiz: [
+          {
+            question: `Which concept is most central to "${titleHint}"?`,
+            options: [
+              flashcards[0]?.term ?? assumedWorkspace,
+              "Unrelated Topic A",
+              "Unrelated Topic B",
+              "None of the above",
+            ],
+            correct_index: 0,
+            explanations: [
+              "Correct — this is the primary focus.",
+              "Incorrect.",
+              "Incorrect.",
+              "Incorrect.",
+            ],
+          },
+        ],
+      };
+    };
 
     if (!configured) {
       toast.warning("Mock parser used — configure AI Engine for live parsing.");
@@ -356,10 +444,23 @@ export function LectureDeck() {
 
           {/* RAW NOTES */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-arcade flex items-center gap-1.5 px-1">
-              <FileText className="h-3.5 w-3.5" />
-              Granola Raw Notes ({visibleRawNotes.length})
-              {notesLoading && <Loader2 className="h-3 w-3 animate-spin ml-auto" />}
+            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-arcade flex items-center justify-between gap-1.5 px-1 w-full">
+              <span className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Granola Raw Notes ({visibleRawNotes.length})
+              </span>
+              <div className="flex items-center gap-2">
+                {notesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                {visibleRawNotes.length > 0 && (
+                  <button
+                    onClick={handleClearAllRawNotes}
+                    className="text-[10px] text-muted-foreground hover:text-destructive uppercase font-bold tracking-wider transition-colors cursor-pointer"
+                    title="Remove all raw notes"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
             </h4>
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
               {visibleRawNotes.length === 0 ? (
@@ -393,18 +494,16 @@ export function LectureDeck() {
                         </span>
                       </div>
                     </button>
-                    {connStatus !== "connected" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRawNote(t.id);
-                        }}
-                        className="p-2 mr-1 text-muted-foreground hover:text-destructive transition-colors rounded hover:bg-destructive/15"
-                        title="Delete mock note"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRawNote(t.id);
+                      }}
+                      className="p-2 mr-1 text-muted-foreground hover:text-destructive transition-colors rounded hover:bg-destructive/15"
+                      title="Delete note"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))
               )}
@@ -413,8 +512,17 @@ export function LectureDeck() {
 
           {/* MASTERED */}
           <div className="space-y-2 pt-2 border-t border-border">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-fuchsia-arcade px-1">
-              🎮 Mastered Portal Deck ({lectures.length})
+            <h4 className="text-xs font-bold uppercase tracking-wider text-fuchsia-arcade px-1 flex items-center justify-between w-full">
+              <span>🎮 Mastered Portal Deck ({lectures.length})</span>
+              {lectures.length > 0 && (
+                <button
+                  onClick={handleClearAllMasteredNotes}
+                  className="text-[10px] text-muted-foreground hover:text-destructive uppercase font-bold tracking-wider transition-colors cursor-pointer"
+                  title="Remove all mastered notes"
+                >
+                  Clear All
+                </button>
+              )}
             </h4>
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
               {lectures.length === 0 ? (
