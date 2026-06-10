@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useArcade } from "../store";
 import { Button } from "@/components/ui/button";
 import { Brain, Loader2, Trash2 } from "lucide-react";
-import { callAIGateway, isConfigured, loadSettings } from "@/lib/aiGateway";
+import { callAIGateway } from "@/lib/aiGateway";
 import { showApiError } from "../ErrorToast";
 
 export function CurriculumArchitect() {
@@ -19,11 +19,7 @@ export function CurriculumArchitect() {
     const list = mistakes.map((m, i) => `${i + 1}. Q: ${m.question}\n   Student chose: "${m.selected}"\n   Correct: "${m.correct}"\n   From: ${m.lectureTitle}`).join("\n\n");
     const prompt = `You are the Curriculum Architect. Analyze these student mistakes, identify the exact cognitive gap, draft a 3-step highly personalized study path, and generate one unique practice question designed to test this weak point.\n\nMistakes:\n${list}`;
 
-    if (!isConfigured(loadSettings())) {
-      setPlan(`🧠 **Cognitive Gap**: You tend to confuse precise definitions with broader categories.\n\n**3-Step Study Path:**\n1. 📖 Re-read the chapter intros for the 3 missed topics.\n2. 🎯 Re-do flashcards for those terms (5 min).\n3. ✍️ Write your own one-sentence definition for each.\n\n**Practice Question:** Pick one missed concept and explain it using a real-world example.\n\n_[Mock plan — connect an AI for real analysis.]_`);
-      setLoading(false);
-      return;
-    }
+
 
     try {
       const out = await callAIGateway(prompt);

@@ -3,7 +3,7 @@ import { useArcade } from "../store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileCheck2, Loader2 } from "lucide-react";
-import { callAIGateway, isConfigured, loadSettings } from "@/lib/aiGateway";
+import { callAIGateway } from "@/lib/aiGateway";
 import { showApiError } from "../ErrorToast";
 
 export function CritiqueSandbox() {

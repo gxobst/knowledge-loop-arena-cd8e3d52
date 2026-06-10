@@ -5,8 +5,6 @@ import { useArcade, type Lecture } from "../store";
 import {
   callAIGateway,
   extractJSON,
-  isConfigured,
-  loadSettings,
   PARSE_PROMPT,
   type ParsedLecture,
   fetchGranolaNotes,
@@ -67,7 +65,6 @@ export function LectureDeck() {
   const [isImporting, setIsImporting] = useState(false);
   const [pasted, setPasted] = useState("");
 
-  const configured = isConfigured(loadSettings());
 
   // Store Sync Hook — Sync local selectedNote with global activeLecture
   useEffect(() => {

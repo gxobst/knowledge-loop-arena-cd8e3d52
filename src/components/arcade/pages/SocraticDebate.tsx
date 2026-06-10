@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useArcade } from "../store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { callAIGateway, isConfigured, loadSettings } from "@/lib/aiGateway";
+import { callAIGateway } from "@/lib/aiGateway";
 import { showApiError } from "../ErrorToast";
 import { Loader2 } from "lucide-react";
 
