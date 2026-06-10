@@ -15,7 +15,7 @@
 ### 📚 2. Lecture Deck (Granola Hub)
 The central control room of your study material, featuring a **Three-Tier State Management System** that links your raw notes to finished gamified study packages:
 *   **State A (Granola Account Meetings):** A checklist selection panel loaded dynamically from your connected Granola account.
-*   **State B (Imported Raw Notes):** User-selected notes imported to the raw sidebar. Features an accordion drawer to preview the raw notes and full transcript.
+*   **State B (Imported Raw Notes):** User-selected notes imported to the raw sidebar. Features two separate collapsible drawers to preview original notes and full transcript separately.
 *   **State C (Mastered Portal Deck):** Completed, AI-analyzed modules. Shows parsed summaries (Cheat Sheets), flashcards, and quizzes.
 *   *Alternative Manual Paste:* Allow students to paste custom transcripts or notes directly into the parser.
 
