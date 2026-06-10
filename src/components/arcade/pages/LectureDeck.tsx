@@ -61,7 +61,7 @@ export function LectureDeck() {
   const [notesLoading, setNotesLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"cheat" | "flashcards" | "quiz">("cheat");
-  const [showRawTextToggle, setShowRawTextToggle] = useState(false);
+  const [showOriginalSource, setShowOriginalSource] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [pasted, setPasted] = useState("");
 
@@ -497,8 +497,8 @@ export function LectureDeck() {
 
   // Defensive raw notes & transcripts accordion text extractions
   const notesText = selectedNote?.notes || "No original notes available.";
-  const transcriptText = selectedNote?.transcript || "No transcript available.";
-  const lines = typeof transcriptText === 'string' ? transcriptText.split('\n') : [];
+  const rawTranscript = selectedNote?.transcript || "";
+  const lines = typeof rawTranscript === 'string' ? rawTranscript.split('\n') : [];
 
   return (
     <div className="space-y-6">
@@ -758,31 +758,31 @@ export function LectureDeck() {
               {/* Collapsible raw notes & transcripts accordion drawer with defensive split checks */}
               <div className="border border-slate-750 bg-slate-900/40 rounded-lg p-3">
                 <button
-                  onClick={() => setShowRawTextToggle(!showRawTextToggle)}
+                  onClick={() => setShowOriginalSource(!showOriginalSource)}
                   className="flex items-center justify-between w-full font-semibold text-sm text-slate-200 cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     📄 View Raw Text & Transcript
                   </span>
-                  <span>{showRawTextToggle ? '▲' : '▼'}</span>
+                  <span>{showOriginalSource ? '▲' : '▼'}</span>
                 </button>
-                {showRawTextToggle && (
-                  <div className="grid md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-800">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Raw Notes</span>
-                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-350 scrollbar-thin">
-                        {notesText}
-                      </div>
+                {showOriginalSource && selectedNote && (
+                  <div className="mt-4 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 text-left space-y-4">
+                    <div>
+                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Original Notes</h4>
+                      <p className="whitespace-pre-line">
+                        {selectedNote && typeof selectedNote.notes === 'string' && selectedNote.notes.trim() !== ""
+                          ? selectedNote.notes 
+                          : "No original notes available."}
+                      </p>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Raw Transcript</span>
-                      <div className="p-3 bg-slate-950 rounded h-40 overflow-y-auto text-xs whitespace-pre-line text-slate-350 scrollbar-thin">
-                        {lines.length > 0 ? (
-                          lines.map((line, idx) => <p key={idx}>{line}</p>)
-                        ) : (
-                          <p className="italic text-muted-foreground">{transcriptText}</p>
-                        )}
-                      </div>
+                    <div>
+                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Full Transcript</h4>
+                      <p className="whitespace-pre-line">
+                        {selectedNote && typeof selectedNote.transcript === 'string' && selectedNote.transcript.trim() !== ""
+                          ? selectedNote.transcript 
+                          : "No transcript available."}
+                      </p>
                     </div>
                   </div>
                 )}
