@@ -277,7 +277,8 @@ export function LectureDeck() {
         .map((s) => s.trim())
         .filter((s) => s.length > 20);
       const terms = text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2}\b/g) ?? [];
-      const uniqueTerms = [...new Set(terms)].filter((t) => t.length > 3).slice(0, 5);
+      const blacklist = ["Summary", "Transcript", "Note", "Lecture", "Takeaway", "Key", "Insight", "General", "Custom", "AI", "Configure", "Engine"];
+      const uniqueTerms = [...new Set(terms)].filter((t) => t.length > 3 && !blacklist.includes(t)).slice(0, 5);
 
       const flashcards =
         uniqueTerms.length >= 2
@@ -335,12 +336,6 @@ export function LectureDeck() {
       };
     };
 
-    if (!configured) {
-      toast.warning("Mock parser used — configure AI Engine for live parsing.");
-      addLecture(titleHint, text, fakeFallback());
-      setLoading(false);
-      return;
-    }
 
     try {
       const raw = await callAIGateway(PARSE_PROMPT(text), true);
