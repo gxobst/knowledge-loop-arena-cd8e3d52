@@ -67,6 +67,21 @@ export function LectureDeck() {
   const [selectedRawNote, setSelectedRawNote] = useState<GranolaNote | null>(null);
 
   // ---- Granola connection lifecycle ----
+  const loadFolders = useCallback(async () => {
+    setFoldersLoading(true);
+    try {
+      const f = await fetchGranolaFolders();
+      setFolders(f);
+      setSelectedFolderId((prev) => prev || (f[0]?.id ?? ""));
+    } catch (e) {
+      toast.error("Failed to load Granola workspaces", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setFoldersLoading(false);
+    }
+  }, []);
+
   const checkConnection = useCallback(async () => {
     setConnStatus("checking");
     setConnError(null);
@@ -78,24 +93,8 @@ export function LectureDeck() {
       setConnStatus("failed");
       setConnError(s.reason ?? "Unknown error");
     }
-  }, []);
+  }, [loadFolders]);
 
-  const loadFolders = useCallback(async () => {
-    setFoldersLoading(true);
-    try {
-      const f = await fetchGranolaFolders();
-      setFolders(f);
-      if (f.length && !selectedFolderId) {
-        setSelectedFolderId(f[0].id);
-      }
-    } catch (e) {
-      toast.error("Failed to load Granola workspaces", {
-        description: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setFoldersLoading(false);
-    }
-  }, [selectedFolderId]);
 
   useEffect(() => {
     void checkConnection();
