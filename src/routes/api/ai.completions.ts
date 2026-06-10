@@ -6,7 +6,11 @@ export const Route = createFileRoute("/api/ai/completions")({
       POST: async ({ request }) => {
         try {
           const body = await request.json().catch(() => ({}));
-          const { prompt, isJSONMode } = body as { prompt?: string; isJSONMode?: boolean };
+          const { prompt, isJSONMode, model } = body as {
+            prompt?: string;
+            isJSONMode?: boolean;
+            model?: string;
+          };
 
           if (!prompt) {
             return new Response(
@@ -15,29 +19,29 @@ export const Route = createFileRoute("/api/ai/completions")({
             );
           }
 
-          const apiKey = process.env.MISTRAL_API_KEY || (typeof Deno !== "undefined" ? Deno.env.get("MISTRAL_API_KEY") : undefined);
+          const apiKey = process.env.LOVABLE_API_KEY;
           if (!apiKey) {
             return new Response(
-              JSON.stringify({ error: "MISTRAL_API_KEY is not configured on the server." }),
+              JSON.stringify({ error: "LOVABLE_API_KEY is not configured on the server." }),
               { status: 500, headers: { "Content-Type": "application/json" } }
             );
           }
 
-          const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
+              "Lovable-API-Key": apiKey,
             },
             body: JSON.stringify({
-              model: "mistral-large-latest",
+              model: model || "google/gemini-3-flash-preview",
               messages: [{ role: "user", content: prompt }],
               ...(isJSONMode ? { response_format: { type: "json_object" } } : {}),
             }),
           });
 
-          const data = await response.json().catch(() => ({}));
-          return new Response(JSON.stringify(data), {
+          const text = await response.text();
+          return new Response(text, {
             status: response.status,
             headers: { "Content-Type": "application/json" },
           });
