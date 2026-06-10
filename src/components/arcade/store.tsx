@@ -51,8 +51,8 @@ interface Ctx {
 const ArcadeContext = createContext<Ctx | null>(null);
 
 export function ArcadeProvider({ children }: { children: ReactNode }) {
-  const [xp, setXp] = useState(120);
-  const [streak, setStreak] = useState(3);
+  const [xp, setXp] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [lectures, setLecturesState] = useState<Lecture[]>([]);
   const [activeLecture, setActiveLecture] = useState<Lecture | null>(null);
   const [mistakes, setMistakesState] = useState<QuizMistake[]>([]);
