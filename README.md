@@ -15,7 +15,7 @@
 ### 📚 2. Lecture Deck (Granola Hub)
 The central control room of your study material, featuring a **Three-Tier State Management System** that links your raw notes to finished gamified study packages:
 *   **State A (Granola Account Meetings):** A checklist selection panel loaded dynamically from your connected Granola account.
-*   **State B (Imported Raw Notes):** User-selected notes imported to the raw sidebar. Features two separate collapsible drawers to preview original notes and full transcript separately.
+*   **State B (Imported Raw Notes):** User-selected notes imported to the raw sidebar. Features two separate collapsible drawers to preview original notes and full transcript separately. Transcripts are dynamically parsed from Granola's structured JSON arrays and formatted as clean speaker-attributed text blocks (`[Speaker Label]: text`).
 *   **State C (Mastered Portal Deck):** Completed, AI-analyzed modules. Shows parsed summaries (Cheat Sheets), flashcards, and quizzes.
 *   *Alternative Manual Paste:* Allow students to paste custom transcripts or notes directly into the parser.
 
@@ -34,6 +34,7 @@ Engage in a live, dual-agent intellectual debate on any concept from your lectur
 *   **Cognitive Gap Finder:** Analyzes mistakes logged during the quizzes to pinpoint specific areas of weakness.
 *   **Personalized Study Path:** Generates a custom 3-step action plan to turn weak spots into masteries.
 *   **Custom Practice Questions:** Provides tailored sample questions to test and resolve identified cognitive gaps.
+*   **Real AI Analysis:** Enabled to use secure server-side cloud proxy routing out-of-the-box, meaning actual AI analysis runs seamlessly even if no local browser API key settings are configured.
 
 ### 📝 6. Critique Sandbox
 *   **Open-Ended Essays:** Test your long-form retention by explaining a lecture in your own words.
@@ -51,9 +52,10 @@ Engage in a live, dual-agent intellectual debate on any concept from your lectur
 *   **Core Framework:** [TanStack Start](https://tanstack.com/router/v1/docs/start/overview) — High-performance React application with file-based routing and seamless server-side capabilities.
 *   **Styling System:** [Tailwind CSS v4](https://tailwindcss.com/) — Utilizes the new `@theme inline` configuration, with custom-designed arcade color palettes (`oklch` harmonized coordinates).
 *   **Animations:** Retro screen-shake, interactive 3D card flipping, and smooth bounce-in animations configured natively in `src/styles.css`.
-*   **API Connectors:**
+*   **API Connectors & Proxy:**
     *   **Granola.ai API:** Integrations for folders, note lists, and rich transcripts (`/api/granola/*` endpoints).
-    *   **Lovable AI Gateway:** Dynamic proxy routing (`/api/ai/completions`) utilizing Gemini models.
+    *   **CORS Bypass Proxy:** Local routing `/api/granola/$` acts as a backend proxy that forwards queries to `https://public-api.granola.ai/v1` when manual browser-local keys are detected, bypassing browser cross-origin constraints.
+    *   **Lovable AI Gateway:** Dynamic secure proxy routing (`/api/ai/completions`) utilizing Gemini models.
 
 ---
 
