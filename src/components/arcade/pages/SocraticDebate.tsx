@@ -21,26 +21,30 @@ export function SocraticDebate() {
     setQ("");
     setLoading(true);
 
-    const ctx = activeLecture ? `Lecture context: ${activeLecture.title}. Summary: ${activeLecture.parsed.summary}\n\n` : "";
-
-    if (!isConfigured(loadSettings())) {
-      setTurns((t) => [
-        ...t,
-        { who: "analogy", text: `🎩 Imagine "${concept}" is like a pizza party — every slice is a tiny piece of the bigger idea! [Mock answer — connect an AI to see the real magic.]` },
-        { who: "compiler", text: `🤖 Pizza? Imprecise! "${concept}" technically refers to a structured concept. Question: can you formally define it in one sentence?` },
-      ]);
-      setLoading(false);
-      return;
-    }
+    const ctx = activeLecture 
+      ? `LECTURE CONTEXT (CORE SOURCE OF TRUTH):\n${activeLecture.raw}\n\n` 
+      : "";
 
     try {
-      const a = await callAIGateway(`${ctx}You are Dr. Analogy, a friendly, eccentric professor. Explain the following concept to a 10-year-old using a vivid, fun metaphor: ${concept}`);
+      const a = await callAIGateway(
+        `${ctx}You are Dr. Analogy, a friendly, eccentric professor. Explain the following concept to a 10-year-old using a vivid, fun metaphor: ${concept}. ` +
+        `You must strictly base your explanation on facts explicitly present in the provided lecture transcript and context. Do NOT introduce or invent external concepts or facts not discussed in the transcript.`
+      );
       setTurns((t) => [...t, { who: "analogy", text: a }]);
 
-      const b = await callAIGateway(`${ctx}You are 'The Strict Compiler', a precise robot tutor. Here is Dr. Analogy's explanation of "${concept}":\n\n${a}\n\nCritique Dr. Analogy's explanation for any oversimplifications or technical omissions, clarify the precise definition, and end with one challenging question for the student.`);
+      const b = await callAIGateway(
+        `${ctx}You are 'The Strict Compiler', a precise robot tutor. Here is Dr. Analogy's explanation of "${concept}":\n\n${a}\n\n` +
+        `Critique Dr. Analogy's explanation for any oversimplifications, technical omissions, or facts that deviate from the lecture transcript. Clarify the precise definition according to the transcript facts, and end with one challenging question for the student based solely on the transcript.`
+      );
       setTurns((t) => [...t, { who: "compiler", text: b }]);
     } catch (e) {
-      showApiError(e);
+      showApiError(e, () => {
+        setTurns((t) => [
+          ...t,
+          { who: "analogy", text: `🎩 Imagine "${concept}" is like a pizza party — every slice is a tiny piece of the bigger idea! [Mock professor explanation - configure AI for live debate.]` },
+          { who: "compiler", text: `🤖 Pizza? Imprecise! "${concept}" technically refers to a structured concept. Question: can you formally define it in one sentence?` },
+        ]);
+      });
     } finally {
       setLoading(false);
     }

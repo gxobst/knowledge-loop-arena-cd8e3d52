@@ -731,7 +731,9 @@ export const MOCK_LECTURES: { id: string; title: string; workspace: string; raw:
 
 export const MOCK_WORKSPACES = ["Computer Science", "Biology", "Economics", "Art History"];
 
-export const PARSE_PROMPT = (text: string) => `You are an expert study assistant. Analyze the following lecture notes and return ONLY a valid raw JSON object (no markdown fences) matching this exact schema:
+export const PARSE_PROMPT = (text: string) => `You are an advanced academic parsing agent. Your task is to analyze the provided LECTURE TITLE, BRIEF NOTES, and the FULL MEETING TRANSCRIPT. You must prioritize the FULL MEETING TRANSCRIPT as your absolute source of truth. Do NOT hallucinate, guess, or invent any external facts. Strictly extract terms, concepts, definitions, and multiple-choice questions that are explicitly discussed in the provided transcript.
+
+Return ONLY a valid raw JSON object (no markdown fences) matching this exact schema:
 
 {
   "subject": "e.g., Biology, Economics, Art History",
@@ -742,7 +744,7 @@ export const PARSE_PROMPT = (text: string) => `You are an expert study assistant
   "quiz": [{"question":"...","options":["A","B","C","D"],"correct_index":0,"explanations":["...","...","...","..."]}]
 }
 
-Lecture notes:
+Input Context:
 """
 ${text}
 """`;
@@ -766,28 +768,28 @@ export const FALLBACK_MOCK_NOTES: GranolaNote[] = [
     title: "MIT CS 6.100L Lecture 1 — Computation Notes",
     workspace: "Computer Science",
     ai_summary: "Lecture notes on computation, primitive data types, evaluation of expressions, operators, and interpreter behavior in modern environments like Python.",
-    transcript: "Lecture notes on computation, primitive data types, evaluation of expressions, operators, and interpreter behavior in modern environments like Python. Variables bind specific memory locations to reuse references across sequences."
+    transcript: "Welcome to MIT 6.100L. Today we are talking about computation. What is computation? It is not just about computers, it's about processes and algorithms. We have declarative knowledge which states facts, and imperative knowledge which states a recipe or a sequence of steps to solve a problem. In Python, everything is an object. Objects have types. We have scalar objects like integers, floats, booleans, and non-scalar objects. When we write an expression, the interpreter evaluates it to a value. We use operators like addition, multiplication, division, and variables which bind a name to a memory location to reuse references across sequences."
   },
   {
     id: "g-raw-2",
     title: "Intro to Photosynthesis Meeting",
     workspace: "Biology",
     ai_summary: "Photosynthesis converts light energy into complex chemical configurations.",
-    transcript: "Photosynthesis converts light energy into complex chemical configurations. The process relies on chlorophyll pigments stored directly within plant chloroplast architectures to successfully execute light reactions alongside the traditional Calvin cycle."
+    transcript: "Alright, let's start our biology review session. Today we are covering photosynthesis. This is how green plants and some other organisms use sunlight to synthesize nutrients from carbon dioxide and water. In plants, photosynthesis takes place in the chloroplasts, which contain chlorophyll. Chlorophyll absorbs light energy, primarily in the blue and red wavelengths, reflecting green light, which is why plants look green. The light-dependent reactions capture energy from light and use it to make ATP and NADPH. The light-independent reactions, or the Calvin cycle, take place in the stroma and use these energy-rich molecules to fix carbon dioxide into G3P, which eventually forms glucose. Stomata are tiny pores on the underside of leaves that open and close to control gas exchange—allowing carbon dioxide in and oxygen and water vapor out."
   },
   {
     id: "g-raw-3",
     title: "Macroeconomics Principles & Inflationary Pressures",
     workspace: "Economics",
     ai_summary: "An examination of how shifts in structural liquidity and consumer index metrics force monetary updates.",
-    transcript: "An examination of how shifts in structural liquidity and consumer index metrics force monetary updates. Discussed pricing structures, supply chain disruptions, and historic models tracking resource pricing behavior."
+    transcript: "Hello everyone, let's look at macroeconomics today, specifically focusing on inflation. Inflation is a quantitative measure of the rate at which the average price level of a basket of selected goods and services in an economy increases over some period. It is often measured by the Consumer Price Index (CPI), which tracks price changes from the perspective of the purchaser. Why does inflation happen? We have demand-pull inflation, where demand exceeds supply, and cost-push inflation, where aggregate supply decreases due to increased costs of wages or raw materials. Central banks use monetary policy to control inflation by adjusting interest rates and manipulating the money supply. When interest rates are raised, borrowing becomes more expensive, cooling down economic activity and reducing inflationary pressures."
   },
   {
     id: "g-raw-4",
     title: "Renaissance Art Movements & Perspectives",
     workspace: "Art History",
     ai_summary: "A comprehensive breakdown of linear perspective techniques introduced during the early 15th century.",
-    transcript: "A comprehensive breakdown of linear perspective techniques introduced during the early 15th century. Explored humanism impacts on iconographic choices and panel painting compositions across Florence."
+    transcript: "Welcome back. Today we are exploring the Renaissance, specifically the development of linear perspective in the 15th century. Linear perspective is a system of creating an illusion of depth on a flat surface. All parallel lines in a painting or drawing converge in a single vanishing point on the composition's horizon line. This technique was pioneered by Filippo Brunelleschi in Florence around 1415 and was later documented by Leon Battista Alberti. This artistic revolution was heavily influenced by humanism, a cultural movement that turned away from medieval scholasticism and revived interest in ancient Greek and Roman thought. Artists like Masaccio and Donatello applied these geometric rules to panel paintings and reliefs, creating a realistic three-dimensional sense of space that forever changed Western art."
   }
 ];
 

@@ -386,14 +386,36 @@ export function LectureDeck() {
 
   const handleImportSelected = async () => {
     if (!selectedRawNote) return;
+    setLoading(true);
     let note = selectedRawNote;
-    // If live note has no transcript, fetch detail
-    if (connStatus === "connected" && (!note.transcript || note.transcript.length < 20)) {
-      const detail = await fetchGranolaNoteDetail(note.id);
-      if (detail) note = detail;
+    
+    // Force detail fetch to get full transcript
+    const detail = await fetchGranolaNoteDetail(note.id);
+    if (detail) {
+      note = detail;
+      setSelectedRawNote(detail);
+      if (selectedFolderId) {
+        setNotesByFolder((prev) => {
+          const folderNotes = prev[selectedFolderId] ?? [];
+          return {
+            ...prev,
+            [selectedFolderId]: folderNotes.map((n) => (n.id === note.id ? detail : n)),
+          };
+        });
+      }
     }
-    const prompt = `Summary: ${note.ai_summary}\n\nTranscript: ${note.transcript}`;
-    parseText(prompt, note.title, note.workspace);
+
+    const richContext = `
+LECTURE TITLE: ${note.title}
+FOLDER/SUBJECT: ${note.workspace || "General"}
+BRIEF NOTES: ${note.ai_summary || ""}
+=========================================
+FULL MEETING TRANSCRIPT (CORE SOURCE OF TRUTH):
+${note.transcript || "No transcript available."}
+=========================================
+`;
+
+    parseText(richContext, note.title, note.workspace);
   };
 
   const handleSelectRawNote = (n: GranolaNote) => {

@@ -22,21 +22,23 @@ export function CritiqueSandbox() {
     setLoading(true);
     setStep1(""); setStep2("");
 
-    if (!isConfigured(loadSettings())) {
-      setStep1("**Score: 7/10** — Good effort! Your answer shows understanding but could be more specific.");
-      setStep2("🌟 You're on the right track! Try these hints:\n1. 🧩 Think about *why* this concept matters.\n2. 🔍 Add one concrete example.\n3. ✨ Try to connect it to something you already know.\n\n_[Mock feedback — connect an AI for real grading.]_");
-      setLoading(false);
-      return;
-    }
-
     try {
-      const ctx = activeLecture ? `Lecture: ${activeLecture.title}\nSummary: ${activeLecture.parsed.summary}\n\n` : "";
-      const s1 = await callAIGateway(`${ctx}Question: ${prompt}\nStudent Answer: ${answer}\n\nGrade the student's response out of 10 and write initial critique feedback.`);
+      const ctx = activeLecture 
+        ? `LECTURE CONTEXT (CORE SOURCE OF TRUTH):\n${activeLecture.raw}\n\n` 
+        : "";
+      const s1 = await callAIGateway(
+        `${ctx}Question: ${prompt}\nStudent Answer: ${answer}\n\n` +
+        `Grade the student's response out of 10 and write initial critique feedback. ` +
+        `You must strictly evaluate the factual accuracy of the student's answer based on the facts explicitly discussed in the provided lecture transcript. Do NOT allow any assumptions or external facts outside of the transcript context.`
+      );
       setStep1(s1);
       const s2 = await callAIGateway(`Read your previous grading critique below. Refine it to ensure it is incredibly supportive, doesn't give away the correct answer, and generates 3 incremental hints to help the student improve their score.\n\nPrevious critique:\n${s1}`);
       setStep2(s2);
     } catch (e) {
-      showApiError(e);
+      showApiError(e, () => {
+        setStep1("**Score: 7/10** — Good effort! Your answer shows understanding but could be more specific.");
+        setStep2("🌟 You're on the right track! Try these hints:\n1. 🧩 Think about *why* this concept matters.\n2. 🔍 Add one concrete example.\n3. ✨ Try to connect it to something you already know.\n\n_[Mock feedback — connect an AI for real grading.]_");
+      });
     } finally {
       setLoading(false);
     }
