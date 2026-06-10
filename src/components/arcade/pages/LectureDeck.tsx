@@ -62,6 +62,8 @@ export function LectureDeck() {
 
   const [activeTab, setActiveTab] = useState<"cheat" | "flashcards" | "quiz">("cheat");
   const [showOriginalSource, setShowOriginalSource] = useState(false);
+  const [showRawNotes, setShowRawNotes] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [pasted, setPasted] = useState("");
 
@@ -291,17 +293,13 @@ export function LectureDeck() {
       const newImported = await Promise.all(
         selectedImportIds.map(async (id) => {
           const meeting = granolaAPIMeetings.find(m => m.id === id);
-          if (!meeting) return null;
-          
           try {
-            const res = await fetch(`/api/granola/notes/${id}?include=transcript`).catch(() => null);
-            if (res && res.ok) {
-              return await res.json().catch(() => meeting);
-            }
+            const detail = await fetchGranolaNoteDetail(id);
+            if (detail) return detail;
           } catch (e) {
             console.error(`Failed to fetch detail for ${id}:`, e);
           }
-          return meeting;
+          return meeting || null;
         })
       );
 
@@ -496,7 +494,7 @@ export function LectureDeck() {
     : false;
 
   // Defensive raw notes & transcripts accordion text extractions
-  const notesText = selectedNote?.notes || "No original notes available.";
+  const notesText = selectedNote?.notes || selectedNote?.ai_summary || "";
   const rawTranscript = selectedNote?.transcript || "";
   const lines = typeof rawTranscript === 'string' ? rawTranscript.split('\n') : [];
 
@@ -755,37 +753,51 @@ export function LectureDeck() {
                 This meeting has not been analyzed yet. Click 'Analyze with AI ⚡' below to generate your study arcade.
               </p>
 
-              {/* Collapsible raw notes & transcripts accordion drawer with defensive split checks */}
-              <div className="border border-slate-750 bg-slate-900/40 rounded-lg p-3">
-                <button
-                  onClick={() => setShowOriginalSource(!showOriginalSource)}
-                  className="flex items-center justify-between w-full font-semibold text-sm text-slate-200 cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    📄 View Raw Text & Transcript
-                  </span>
-                  <span>{showOriginalSource ? '▲' : '▼'}</span>
-                </button>
-                {showOriginalSource && selectedNote && (
-                  <div className="mt-4 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 text-left space-y-4">
-                    <div>
-                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Original Notes</h4>
-                      <p className="whitespace-pre-line">
-                        {selectedNote && typeof selectedNote.notes === 'string' && selectedNote.notes.trim() !== ""
-                          ? selectedNote.notes 
+              {/* Collapsible raw notes & transcripts accordion drawers */}
+              <div className="space-y-3">
+                {/* 1. Raw Notes Collapsible */}
+                <div className="border border-slate-750 bg-slate-900/40 rounded-lg p-3">
+                  <button
+                    onClick={() => setShowRawNotes(!showRawNotes)}
+                    className="flex items-center justify-between w-full font-semibold text-sm text-slate-200 cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      📄 View Original Notes
+                    </span>
+                    <span>{showRawNotes ? '▲' : '▼'}</span>
+                  </button>
+                  {showRawNotes && selectedNote && (
+                    <div className="mt-3 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 text-left">
+                      <p className="whitespace-pre-line font-normal text-slate-300">
+                        {typeof notesText === 'string' && notesText.trim() !== ""
+                          ? notesText 
                           : "No original notes available."}
                       </p>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Full Transcript</h4>
-                      <p className="whitespace-pre-line">
-                        {selectedNote && typeof selectedNote.transcript === 'string' && selectedNote.transcript.trim() !== ""
-                          ? selectedNote.transcript 
+                  )}
+                </div>
+
+                {/* 2. Transcript Collapsible */}
+                <div className="border border-slate-750 bg-slate-900/40 rounded-lg p-3">
+                  <button
+                    onClick={() => setShowTranscript(!showTranscript)}
+                    className="flex items-center justify-between w-full font-semibold text-sm text-slate-200 cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      🎙️ View Full Transcript
+                    </span>
+                    <span>{showTranscript ? '▲' : '▼'}</span>
+                  </button>
+                  {showTranscript && selectedNote && (
+                    <div className="mt-3 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 text-left">
+                      <p className="whitespace-pre-line font-normal text-slate-300">
+                        {typeof rawTranscript === 'string' && rawTranscript.trim() !== ""
+                          ? rawTranscript 
                           : "No transcript available."}
                       </p>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* 4. AI ANALYSIS MOVEMENT BUTTON */}
