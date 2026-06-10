@@ -27,6 +27,8 @@ import {
   BookOpen,
   Plug,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { showApiError } from "../ErrorToast";
 import { toast } from "sonner";
@@ -45,6 +47,7 @@ export function LectureDeck() {
   const [connError, setConnError] = useState<string | null>(null);
   const [showWarningBanner, setShowWarningBanner] = useState(false);
   const [folders, setFolders] = useState<GranolaFolder[]>([]);
+  const [sourceExpanded, setSourceExpanded] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
   const [notesByFolder, setNotesByFolder] = useState<Record<string, GranolaNote[]>>({});
   const [notesLoading, setNotesLoading] = useState(false);
@@ -199,7 +202,10 @@ export function LectureDeck() {
     for (const m of mockNotes) {
       if (!combined.some((n) => n.id === m.id)) combined.push(m);
     }
-    return combined;
+    // Filter out notes that have already been processed into the Mastered Deck
+    return combined.filter(
+      (n) => !lectures.some((l) => l.title === n.title || l.id === n.id)
+    );
   })();
 
   // Workspace name for display
@@ -640,9 +646,9 @@ ${note.transcript || "No transcript available."}
           {showInitialPlaceholder ? (
             <div className="arcade-card p-12 text-center flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-indigo-arcade/50 bg-indigo-arcade/5 animate-bounce-in">
               <BookOpen className="h-16 w-16 text-indigo-arcade animate-pulse" />
-              <h3 className="font-bold text-xl text-foreground">No study modules loaded yet!</h3>
+              <h3 className="font-bold text-xl text-foreground">Ready to study?</h3>
               <p className="text-sm text-muted-foreground max-w-md">
-                Connect to Granola, paste a transcript, or load mock data to begin.
+                Paste some notes, connect your Granola workspace, or click this button to load our pre-populated sample modules!
               </p>
               <Button
                 onClick={handleLoadMockData}
@@ -733,6 +739,25 @@ ${note.transcript || "No transcript available."}
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* COLLAPSIBLE SOURCE MATERIAL DRAWER */}
+              <div className="arcade-card p-4 border border-border bg-card/50">
+                <button
+                  onClick={() => setSourceExpanded(!sourceExpanded)}
+                  className="w-full flex items-center justify-between text-sm font-semibold text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    📄 View Original Source Material (Granola Transcript & Notes)
+                  </span>
+                  {sourceExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {sourceExpanded && (
+                  <div className="mt-3 p-3 bg-input/60 rounded-md border border-border text-xs text-foreground/90 whitespace-pre-wrap max-h-60 overflow-y-auto font-mono">
+                    {activeLecture.raw || "No original source material available."}
+                  </div>
+                )}
               </div>
             </>
           ) : (
