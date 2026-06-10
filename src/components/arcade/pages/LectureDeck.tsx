@@ -43,6 +43,7 @@ export function LectureDeck() {
   // Granola connector state
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
   const [connError, setConnError] = useState<string | null>(null);
+  const [showWarningBanner, setShowWarningBanner] = useState(false);
   const [folders, setFolders] = useState<GranolaFolder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
   const [notesByFolder, setNotesByFolder] = useState<Record<string, GranolaNote[]>>({});
@@ -109,6 +110,7 @@ export function LectureDeck() {
   const checkConnection = useCallback(async () => {
     setConnStatus("checking");
     setConnError(null);
+    setShowWarningBanner(false);
 
     // Only check for actual Granola-specific keys
     const hasManualKey = !!(
@@ -119,18 +121,41 @@ export function LectureDeck() {
     if (hasManualKey) {
       // Manual key present — mark connected and load folders
       setConnStatus("connected");
+      setShowWarningBanner(false);
       void loadFolders();
       return;
     }
 
+    // No manual key — check communication to local endpoints or /api/ai/completions
+    let canCommunicate = false;
+    try {
+      const res = await fetch("/api/ai/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "ping" }),
+      });
+      if (res.status !== 404 && res.status !== 502 && res.status !== 504) {
+        canCommunicate = true;
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // No manual key — try the backend gateway
     const s = await fetchGranolaStatus();
+
+    if (s.outcome === "gateway" || s.outcome === "manual_key") {
+      canCommunicate = true;
+    }
+
     if (s.connected) {
       setConnStatus("connected");
+      setShowWarningBanner(false);
       void loadFolders();
     } else {
       setConnStatus("failed");
       setConnError(s.reason ?? "No active gateway connection or Granola API key found.");
+      setShowWarningBanner(!canCommunicate);
     }
   }, [loadFolders]);
 
@@ -401,7 +426,7 @@ export function LectureDeck() {
         </p>
       </div>
 
-      {connStatus === "failed" && (
+      {showWarningBanner && (
         <div className="arcade-card p-4 border-amber-arcade bg-amber-arcade/10 flex items-start gap-3 animate-pulse-glow">
           <AlertTriangle className="text-amber-arcade h-5 w-5 mt-0.5 shrink-0" />
           <div className="text-sm">

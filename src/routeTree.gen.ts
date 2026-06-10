@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGranolaStatusRouteImport } from './routes/api/granola.status'
 import { Route as ApiGranolaSplatRouteImport } from './routes/api/granola.$'
+import { Route as ApiAiCompletionsRouteImport } from './routes/api/ai.completions'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,33 +29,51 @@ const ApiGranolaSplatRoute = ApiGranolaSplatRouteImport.update({
   path: '/api/granola/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAiCompletionsRoute = ApiAiCompletionsRouteImport.update({
+  id: '/api/ai/completions',
+  path: '/api/ai/completions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/ai/completions': typeof ApiAiCompletionsRoute
   '/api/granola/$': typeof ApiGranolaSplatRoute
   '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/ai/completions': typeof ApiAiCompletionsRoute
   '/api/granola/$': typeof ApiGranolaSplatRoute
   '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/ai/completions': typeof ApiAiCompletionsRoute
   '/api/granola/$': typeof ApiGranolaSplatRoute
   '/api/granola/status': typeof ApiGranolaStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/granola/$' | '/api/granola/status'
+  fullPaths:
+    | '/'
+    | '/api/ai/completions'
+    | '/api/granola/$'
+    | '/api/granola/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/granola/$' | '/api/granola/status'
-  id: '__root__' | '/' | '/api/granola/$' | '/api/granola/status'
+  to: '/' | '/api/ai/completions' | '/api/granola/$' | '/api/granola/status'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/ai/completions'
+    | '/api/granola/$'
+    | '/api/granola/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiAiCompletionsRoute: typeof ApiAiCompletionsRoute
   ApiGranolaSplatRoute: typeof ApiGranolaSplatRoute
   ApiGranolaStatusRoute: typeof ApiGranolaStatusRoute
 }
@@ -82,11 +101,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGranolaSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ai/completions': {
+      id: '/api/ai/completions'
+      path: '/api/ai/completions'
+      fullPath: '/api/ai/completions'
+      preLoaderRoute: typeof ApiAiCompletionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiAiCompletionsRoute: ApiAiCompletionsRoute,
   ApiGranolaSplatRoute: ApiGranolaSplatRoute,
   ApiGranolaStatusRoute: ApiGranolaStatusRoute,
 }
