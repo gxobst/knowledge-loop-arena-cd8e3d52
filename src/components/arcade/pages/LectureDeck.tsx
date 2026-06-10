@@ -15,7 +15,6 @@ import {
   fetchGranolaNoteDetail,
   type GranolaNote,
   type GranolaFolder,
-  FALLBACK_MOCK_NOTES,
 } from "@/lib/aiGateway";
 import {
   Loader2,
@@ -37,99 +36,108 @@ type ConnStatus = "idle" | "checking" | "connected" | "failed";
 
 export function LectureDeck() {
   const { lectures, activeLecture, setActiveLecture, setLectures } = useArcade();
+  
+  // STEP 1: DEFINE THE STATE VARIABLES (EXPLICIT)
+  const [rawNotes, setRawNotes] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [masteredDeck, setMasteredDeck] = useState<any[]>([]);
+  const [showOriginalSource, setShowOriginalSource] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Other UI & connection states
+  const [selectedRawNote, setSelectedRawNote] = useState<any | null>(null);
   const [pasted, setPasted] = useState("");
   const [loading, setLoading] = useState(false);
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
-  const configured = isConfigured(loadSettings());
-
-  // Granola connector state
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
   const [connError, setConnError] = useState<string | null>(null);
   const [showWarningBanner, setShowWarningBanner] = useState(false);
-  const [folders, setFolders] = useState<GranolaFolder[]>([]);
-  const [sourceExpanded, setSourceExpanded] = useState(false);
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
-  const [notesByFolder, setNotesByFolder] = useState<Record<string, GranolaNote[]>>({});
-  const [notesLoading, setNotesLoading] = useState(false);
   const [foldersLoading, setFoldersLoading] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
 
-  // Mock/offline raw notes
-  const [mockNotes, setMockNotes] = useState<GranolaNote[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const v = localStorage.getItem("lectureloop_raw_notes");
-      return v ? JSON.parse(v) : [];
-    } catch {
-      return [];
+  const configured = isConfigured(loadSettings());
+
+  // Store Sync Hook — Sync local selectedNote with global activeLecture
+  useEffect(() => {
+    setActiveLecture(selectedNote);
+  }, [selectedNote, setActiveLecture]);
+
+  // Store Sync Hook — Sync local masteredDeck with global lectures
+  useEffect(() => {
+    setLectures(masteredDeck);
+  }, [masteredDeck, setLectures]);
+
+  // Initial Sync Hook — Load global lectures on mount if present
+  useEffect(() => {
+    if (lectures && lectures.length > 0 && masteredDeck.length === 0) {
+      setMasteredDeck(lectures);
     }
-  });
-  const saveMockNotes = (notes: GranolaNote[]) => {
-    setMockNotes(notes);
-    localStorage.setItem("lectureloop_raw_notes", JSON.stringify(notes));
-  };
+    if (activeLecture && !selectedNote) {
+      setSelectedNote(activeLecture);
+    }
+  }, [lectures, activeLecture]);
 
-  const [selectedRawNote, setSelectedRawNote] = useState<GranolaNote | null>(null);
-
-  // ---- Granola connection lifecycle ----
-  const loadFolders = useCallback(async () => {
+  // Granola Data Fetcher
+  const fetchGranolaData = async () => {
     setFoldersLoading(true);
+    setNotesLoading(true);
     try {
       const f = await fetchGranolaFolders();
       if (f && f.length > 0) {
-        setFolders(f);
-        setSelectedFolderId((prev) => prev || (f[0]?.id ?? ""));
+        setWorkspaces(f);
+        setSelectedFolderId(f[0]?.id ?? "");
       } else {
-        // Scenario A: No folders exist in user's account -> Inject virtual fallback folder
-        const fallbackFolders: GranolaFolder[] = [{ id: "all_notes", name: "All Meetings 📚" }];
-        setFolders(fallbackFolders);
+        const fallbackFolders = [{ id: "all_notes", name: "All Meetings 📚" }];
+        setWorkspaces(fallbackFolders);
         setSelectedFolderId("all_notes");
-
-        // Immediately trigger follow-up fetch for all loose notes
-        setNotesLoading(true);
-        try {
-          const notes = await fetchGranolaNotes(); // bypass folder param
-          setNotesByFolder((prev) => ({ ...prev, all_notes: notes }));
-        } catch (noteErr) {
-          toast.error("Failed to load loose meeting notes", {
-            description: noteErr instanceof Error ? noteErr.message : String(noteErr),
-          });
-        } finally {
-          setNotesLoading(false);
-        }
       }
+
+      const notes = await fetchGranolaNotes();
+      setRawNotes(notes);
     } catch (e) {
-      toast.error("Failed to load Granola workspaces", {
-        description: e instanceof Error ? e.message : String(e),
-      });
+      console.error("Failed to load Granola data:", e);
     } finally {
       setFoldersLoading(false);
+      setNotesLoading(false);
     }
+  };
+
+  // STEP 2: REFAC-TOR THE INITIAL MOUNT EFFECT (STRICTLY NO AUTO-MOCK)
+  useEffect(() => {
+    const checkLiveConnection = async () => {
+      try {
+        const res = await fetch('/api/granola/folders?page_size=30');
+        if (res.ok) {
+          // Run live fetch if connected
+          fetchGranolaData();
+        }
+      } catch (e) {
+        console.log("LectureDeck: Offline/unconfigured on initial mount. Keeping deck empty.");
+      }
+    };
+    checkLiveConnection();
   }, []);
 
-  const handleFolderSelect = useCallback((folderId: string) => {
-    setSelectedFolderId(folderId);
-  }, []);
-
+  // Connection Checker (Manual or Gateway)
   const checkConnection = useCallback(async () => {
     setConnStatus("checking");
     setConnError(null);
     setShowWarningBanner(false);
 
-    // Only check for actual Granola-specific keys
     const hasManualKey = !!(
       localStorage.getItem("granola_api_key") ||
       localStorage.getItem("lectureloop_granola_key")
     );
 
     if (hasManualKey) {
-      // Manual key present — mark connected and load folders
       setConnStatus("connected");
       setShowWarningBanner(false);
-      void loadFolders();
+      void fetchGranolaData();
       return;
     }
 
-    // No manual key — check communication to local endpoints or /api/ai/completions
     let canCommunicate = false;
     try {
       const res = await fetch("/api/ai/completions", {
@@ -144,9 +152,7 @@ export function LectureDeck() {
       // ignore
     }
 
-    // No manual key — try the backend gateway
     const s = await fetchGranolaStatus();
-
     if (s.outcome === "gateway" || s.outcome === "manual_key") {
       canCommunicate = true;
     }
@@ -154,121 +160,177 @@ export function LectureDeck() {
     if (s.connected) {
       setConnStatus("connected");
       setShowWarningBanner(false);
-      void loadFolders();
+      void fetchGranolaData();
     } else {
       setConnStatus("failed");
       setConnError(s.reason ?? "No active gateway connection or Granola API key found.");
       setShowWarningBanner(!canCommunicate);
     }
-  }, [loadFolders]);
+  }, []);
 
-
-  useEffect(() => {
-    void checkConnection();
-  }, [checkConnection]);
-
-  // Fetch notes when folder selected
-  useEffect(() => {
-    if (connStatus !== "connected" || !selectedFolderId) return;
-    if (notesByFolder[selectedFolderId]) return;
-    let cancelled = false;
-    (async () => {
-      setNotesLoading(true);
-      try {
-        const idToPass = (selectedFolderId === "all_notes" || selectedFolderId === "all") ? undefined : selectedFolderId;
-        const notes = await fetchGranolaNotes(idToPass);
-        if (!cancelled) {
-          setNotesByFolder((prev) => ({ ...prev, [selectedFolderId]: notes }));
-        }
-      } catch (e) {
-        if (!cancelled) {
-          toast.error("Failed to load notes", {
-            description: e instanceof Error ? e.message : String(e),
-          });
-        }
-      } finally {
-        if (!cancelled) setNotesLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [connStatus, selectedFolderId, notesByFolder]);
-
-  const liveNotes = selectedFolderId ? notesByFolder[selectedFolderId] ?? [] : [];
-  // Always combine live + mock notes, deduplicating by id
-  const visibleRawNotes: GranolaNote[] = (() => {
-    const combined = [...liveNotes];
-    for (const m of mockNotes) {
-      if (!combined.some((n) => n.id === m.id)) combined.push(m);
-    }
-    // Filter out notes that have already been processed into the Mastered Deck
-    return combined.filter(
-      (n) => !lectures.some((l) => l.title === n.title || l.id === n.id)
-    );
-  })();
-
-  // Workspace name for display
-  const selectedFolderName =
-    folders.find((f) => f.id === selectedFolderId)?.name ?? "All";
-
-  // ---- Mock data ----
+  // STEP 3: IMPLEMENT THE EXPLICIT "LOAD MOCK DATA" BUTTON HANDLER
   const handleLoadMockData = () => {
-    const merged = [...mockNotes];
-    FALLBACK_MOCK_NOTES.forEach((m) => {
-      if (!merged.some((n) => n.id === m.id || n.title === m.title)) merged.push(m);
-    });
-    saveMockNotes(merged);
+    const sampleModules = [
+      {
+        id: "mock-1",
+        title: "MIT CS 6.100L Lecture 1 — Computation Notes",
+        workspace_name: "Computer Science",
+        ai_summary: "### Topics Covered\n- Declarative vs. Imperative knowledge.\n- How computers execute instructions.\n- Basic Python variables and scalar types (int, float, bool).",
+        notes: "Professor Ana Bell. Declarative: statements of fact. Imperative: recipes/how-to.",
+        transcript: "Welcome to 6.100L. Today we're learning the fundamentals of computer science. Declarative knowledge consists of statements of fact, whereas imperative knowledge is a recipe or a sequence of steps to solve a problem. In Python, variables bind a name to a value, and we have scalar types like int, float, and boolean."
+      },
+      {
+        id: "mock-2",
+        title: "Intro to Photosynthesis Meeting",
+        workspace_name: "Biology",
+        ai_summary: "### Topics Covered\n- Light-dependent reactions.\n- Calvin Cycle and ATP generation.",
+        notes: "Light reactions occur in the thylakoid membrane. Calvin cycle occurs in the stroma.",
+        transcript: "Let's review the photosynthesis workflow. First, we have the light-dependent reactions in the thylakoid membrane where chlorophyll absorbs light energy, generating ATP and NADPH. Then, the Calvin Cycle takes place in the stroma, using carbon dioxide to produce glucose."
+      }
+    ];
 
-    // Also inject into the notesByFolder so they show up when connected
-    if (selectedFolderId) {
-      setNotesByFolder((prev) => {
-        const existing = prev[selectedFolderId] ?? [];
-        const combined = [...existing];
-        for (const m of merged) {
-          if (!combined.some((n) => n.id === m.id)) combined.push(m);
-        }
-        return { ...prev, [selectedFolderId]: combined };
-      });
-    }
+    // Merge cleanly without wiping out any already imported notes
+    setRawNotes(prev => {
+      const existingIds = new Set(prev.map(item => item.id));
+      const uniqueNewSamples = sampleModules.filter(item => !existingIds.has(item.id));
+      return [...prev, ...uniqueNewSamples];
+    });
+    
+    // Set dropdown to display a mock workspace
+    setWorkspaces(prev => {
+      if (prev.some(w => w.id === "all")) return prev;
+      return [...prev, { id: "all", name: "All Meetings" }];
+    });
+    
     toast.success("📚 Sample mock data loaded!");
   };
 
-  const handleDeleteRawNote = (id: string) => {
-    saveMockNotes(mockNotes.filter((n) => n.id !== id));
-    setNotesByFolder((prev) => {
-      const updated = { ...prev };
-      for (const folderId in updated) {
-        updated[folderId] = updated[folderId].filter((n) => n.id !== id);
+  // Content-aware fallback generator for error cases
+  const fakeFallback = (text: string, titleHint: string, assumedWorkspace = "Custom") => {
+    const sentences = text
+      .split(/[.!?]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 20);
+    const terms = text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2}\b/g) ?? [];
+    const blacklist = ["Summary", "Transcript", "Note", "Lecture", "Takeaway", "Key", "Insight", "General", "Custom", "AI", "Configure", "Engine"];
+    const uniqueTerms = [...new Set(terms)].filter((t) => t.length > 3 && !blacklist.includes(t)).slice(0, 5);
+
+    const flashcards =
+      uniqueTerms.length >= 2
+        ? uniqueTerms.map((term, i) => ({
+            term,
+            definition:
+              sentences[i]?.slice(0, 140) ??
+              `A concept from ${titleHint} relating to ${term.toLowerCase()}.`,
+          }))
+        : [
+            {
+              term: titleHint.split(/\s+/).slice(0, 3).join(" "),
+              definition: sentences[0]?.slice(0, 140) ?? `Primary takeaway from ${titleHint}.`,
+            },
+            {
+              term: "Key Insight",
+              definition: sentences[1]?.slice(0, 140) ?? `An important concept discussed in this material.`,
+            },
+            {
+              term: "Application",
+              definition: sentences[2]?.slice(0, 140) ?? `How these ideas connect to the broader field of ${assumedWorkspace}.`,
+            },
+          ];
+
+    return {
+      subject: assumedWorkspace,
+      difficulty: "Intermediate",
+      tags: ["imported", assumedWorkspace.toLowerCase().replace(/\s+/g, "-")],
+      summary:
+        sentences.length >= 2
+          ? sentences
+              .slice(0, 4)
+              .map((s, i) => `- ${["🧠", "📦", "🔄", "⚙️"][i % 4]} ${s}`)
+              .join("\n")
+          : `- 📝 **Summary** for *${titleHint}*\n- 🔌 Configure AI Engine to generate richer analysis.`,
+      flashcards,
+      quiz: [
+        {
+          question: `Which concept is most central to "${titleHint}"?`,
+          options: [
+            flashcards[0]?.term ?? assumedWorkspace,
+            "Unrelated Topic A",
+            "Unrelated Topic B",
+            "None of the above",
+          ],
+          correct_index: 0,
+          explanations: [
+            "Correct — this is the primary focus.",
+            "Incorrect.",
+            "Incorrect.",
+            "Incorrect.",
+          ],
+        },
+      ],
+    };
+  };
+
+  // STEP 4: IMPLEMENT THE SELECTIVE IMPORT FUNCTION
+  const handleImportAndProcess = async (note: any) => {
+    try {
+      setIsImporting(true);
+      
+      // 1. Fetch full note detail including transcript
+      const res = await fetch(`/api/granola/notes/${note.id}?include=transcript`).catch(() => null);
+      const detailNote = res && res.ok ? await res.json().catch(() => note) : note;
+
+      // 2. Build rich context payload
+      const richContext = `
+        LECTURE TITLE: ${detailNote.title}
+        FOLDER: ${detailNote.workspace_name || detailNote.workspace || 'General'}
+        BRIEF NOTES: ${detailNote.notes || detailNote.ai_summary || ''}
+        =========================================
+        FULL MEETING TRANSCRIPT (CORE TRUTH):
+        ${detailNote.transcript || detailNote.text || 'No transcript available.'}
+      `;
+      
+      // 3. Call gateway
+      let parsedData: any;
+      try {
+        const rawResponse = await callAIGateway(PARSE_PROMPT(richContext), true);
+        parsedData = extractJSON<any>(rawResponse);
+      } catch (e) {
+        console.warn("AI generation failed, using fallback mock parser:", e);
+        parsedData = fakeFallback(richContext, detailNote.title, detailNote.workspace_name || detailNote.workspace || 'General');
       }
-      return updated;
-    });
-    if (selectedRawNote?.id === id) setSelectedRawNote(null);
-  };
 
-  const handleDeleteMasteredNote = (id: string) => {
-    setLectures(lectures.filter((l) => l.id !== id));
-    if (activeLecture?.id === id) setActiveLecture(null);
-  };
+      const processedModule = {
+        id: detailNote.id,
+        title: detailNote.title,
+        workspace: detailNote.workspace_name || detailNote.workspace || 'General',
+        summary: parsedData.summary,
+        flashcards: parsedData.flashcards,
+        quiz: parsedData.quiz,
+        notes: detailNote.notes || detailNote.ai_summary || '',       // Preserve original notes
+        transcript: detailNote.transcript || detailNote.text || '', // Preserve original transcript
+        parsed: parsedData // Backwards compatibility for templates
+      };
 
-  const handleClearAllRawNotes = () => {
-    if (window.confirm("Are you sure you want to clear all raw notes?")) {
-      saveMockNotes([]);
-      setNotesByFolder({});
+      // 4. Save to mastered deck (prevent duplicates)
+      setMasteredDeck(prev => {
+        if (prev.some(item => item.id === processedModule.id)) return prev;
+        return [...prev, processedModule];
+      });
+      
+      // Set as the active selected study guide
+      setSelectedNote(processedModule);
       setSelectedRawNote(null);
-      toast.success("💥 All raw notes cleared!");
+      toast.success("🏆 Added to Mastered Deck!");
+    } catch (error) {
+      console.error("AI Generation failed:", error);
+      toast.error("Generation failed. Loaded fallback content.");
+    } finally {
+      setIsImporting(false);
     }
   };
 
-  const handleClearAllMasteredNotes = () => {
-    if (window.confirm("Are you sure you want to clear all mastered notes from the deck?")) {
-      setLectures([]);
-      setActiveLecture(null);
-      toast.success("💥 Mastered deck cleared!");
-    }
-  };
-
-  // ---- AI parse ----
+  // AI manual parsing route
   async function parseText(text: string, titleHint: string, assumedWorkspace = "Custom") {
     if (!text.trim()) {
       toast.error("Content is empty.");
@@ -276,82 +338,51 @@ export function LectureDeck() {
     }
     setLoading(true);
 
-    const fakeFallback = (): ParsedLecture => {
-      // Extract real sentences from the content for meaningful flashcards
-      const sentences = text
-        .split(/[.!?]+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 20);
-      const terms = text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2}\b/g) ?? [];
-      const blacklist = ["Summary", "Transcript", "Note", "Lecture", "Takeaway", "Key", "Insight", "General", "Custom", "AI", "Configure", "Engine"];
-      const uniqueTerms = [...new Set(terms)].filter((t) => t.length > 3 && !blacklist.includes(t)).slice(0, 5);
-
-      const flashcards =
-        uniqueTerms.length >= 2
-          ? uniqueTerms.map((term, i) => ({
-              term,
-              definition:
-                sentences[i]?.slice(0, 140) ??
-                `A concept from ${titleHint} relating to ${term.toLowerCase()}.`,
-            }))
-          : [
-              {
-                term: titleHint.split(/\s+/).slice(0, 3).join(" "),
-                definition: sentences[0]?.slice(0, 140) ?? `Primary takeaway from ${titleHint}.`,
-              },
-              {
-                term: "Key Insight",
-                definition: sentences[1]?.slice(0, 140) ?? `An important concept discussed in this material.`,
-              },
-              {
-                term: "Application",
-                definition: sentences[2]?.slice(0, 140) ?? `How these ideas connect to the broader field of ${assumedWorkspace}.`,
-              },
-            ];
-
-      return {
-        subject: assumedWorkspace,
-        difficulty: "Intermediate",
-        tags: ["imported", assumedWorkspace.toLowerCase().replace(/\s+/g, "-")],
-        summary:
-          sentences.length >= 2
-            ? sentences
-                .slice(0, 4)
-                .map((s, i) => `- ${["🧠", "📦", "🔄", "⚙️"][i % 4]} ${s}`)
-                .join("\n")
-            : `- 📝 **Summary** for *${titleHint}*\n- 🔌 Configure AI Engine to generate richer analysis.`,
-        flashcards,
-        quiz: [
-          {
-            question: `Which concept is most central to "${titleHint}"?`,
-            options: [
-              flashcards[0]?.term ?? assumedWorkspace,
-              "Unrelated Topic A",
-              "Unrelated Topic B",
-              "None of the above",
-            ],
-            correct_index: 0,
-            explanations: [
-              "Correct — this is the primary focus.",
-              "Incorrect.",
-              "Incorrect.",
-              "Incorrect.",
-            ],
-          },
-        ],
-      };
-    };
-
-
     try {
-      const raw = await callAIGateway(PARSE_PROMPT(text), true);
-      const parsed = extractJSON<ParsedLecture>(raw);
-      if (!parsed.subject || parsed.subject === "Custom") parsed.subject = assumedWorkspace;
-      addLecture(titleHint, text, parsed);
+      const rawResponse = await callAIGateway(PARSE_PROMPT(text), true);
+      const parsedData = extractJSON<any>(rawResponse);
+
+      const processedModule = {
+        id: crypto.randomUUID(),
+        title: titleHint,
+        workspace: assumedWorkspace,
+        summary: parsedData.summary,
+        flashcards: parsedData.flashcards,
+        quiz: parsedData.quiz,
+        notes: text,
+        transcript: text,
+        parsed: parsedData
+      };
+
+      setMasteredDeck(prev => {
+        if (prev.some(item => item.title === processedModule.title)) return prev;
+        return [...prev, processedModule];
+      });
+      setSelectedNote(processedModule);
+      setSelectedRawNote(null);
+      setPasted("");
       toast.success("⚡ Imported & analyzed!");
     } catch (e) {
       showApiError(e, () => {
-        addLecture(titleHint, text, fakeFallback());
+        const fallbackData = fakeFallback(text, titleHint, assumedWorkspace);
+        const processedModule = {
+          id: crypto.randomUUID(),
+          title: titleHint,
+          workspace: assumedWorkspace,
+          summary: fallbackData.summary,
+          flashcards: fallbackData.flashcards,
+          quiz: fallbackData.quiz,
+          notes: text,
+          transcript: text,
+          parsed: fallbackData
+        };
+        setMasteredDeck(prev => {
+          if (prev.some(item => item.title === processedModule.title)) return prev;
+          return [...prev, processedModule];
+        });
+        setSelectedNote(processedModule);
+        setSelectedRawNote(null);
+        setPasted("");
         toast.info("Loaded fallback mock analysis.");
       });
     } finally {
@@ -359,86 +390,65 @@ export function LectureDeck() {
     }
   }
 
-  function addLecture(title: string, raw: string, parsed: ParsedLecture) {
-    const exists = lectures.find((l) => l.title === title);
-    if (exists) {
-      setActiveLecture(exists);
-      toast.info("Already in Mastered Deck — opening existing.");
-      setSelectedRawNote(null);
-      return;
-    }
-    const newLecture: Lecture = {
-      id: crypto.randomUUID(),
-      title,
-      workspace: parsed.subject || "Custom",
-      raw,
-      parsed,
-    };
-    setLectures([newLecture, ...lectures]);
-    setActiveLecture(newLecture);
-    setSelectedRawNote(null);
-    setPasted("");
-  }
+  // Deletion operations
+  const handleDeleteRawNote = (id: string) => {
+    setRawNotes(prev => prev.filter(n => n.id !== id));
+    if (selectedRawNote?.id === id) setSelectedRawNote(null);
+  };
 
-  const handleAddToMasteredDeck = (lecture: Lecture) => {
-    const exists = lectures.some((l) => l.id === lecture.id || l.title === lecture.title);
+  const handleDeleteMasteredNote = (id: string) => {
+    setMasteredDeck(prev => prev.filter(l => l.id !== id));
+    if (selectedNote?.id === id) setSelectedNote(null);
+  };
+
+  const handleClearAllRawNotes = () => {
+    if (window.confirm("Are you sure you want to clear all raw notes?")) {
+      setRawNotes([]);
+      setSelectedRawNote(null);
+      toast.success("💥 All raw notes cleared!");
+    }
+  };
+
+  const handleClearAllMasteredNotes = () => {
+    if (window.confirm("Are you sure you want to clear all mastered notes from the deck?")) {
+      setMasteredDeck([]);
+      setSelectedNote(null);
+      toast.success("💥 Mastered deck cleared!");
+    }
+  };
+
+  const handleSelectRawNote = (n: any) => {
+    setSelectedNote(null);
+    setSelectedRawNote(n);
+  };
+
+  const handleSelectMastered = (l: any) => {
+    setSelectedRawNote(null);
+    setSelectedNote(l);
+  };
+
+  const handleAddToMasteredDeck = (lecture: any) => {
+    const exists = masteredDeck.some((l) => l.id === lecture.id || l.title === lecture.title);
     if (!exists) {
-      setLectures([lecture, ...lectures]);
+      setMasteredDeck([lecture, ...masteredDeck]);
       toast.success("🏆 Added to Mastered Deck!");
     } else {
       toast.info("Topic already mastered.");
     }
   };
 
-  const handleImportSelected = async () => {
-    if (!selectedRawNote) return;
-    setLoading(true);
-    let note = selectedRawNote;
-    
-    // Force detail fetch to get full transcript
-    const detail = await fetchGranolaNoteDetail(note.id);
-    if (detail) {
-      note = detail;
-      setSelectedRawNote(detail);
-      if (selectedFolderId) {
-        setNotesByFolder((prev) => {
-          const folderNotes = prev[selectedFolderId] ?? [];
-          return {
-            ...prev,
-            [selectedFolderId]: folderNotes.map((n) => (n.id === note.id ? detail : n)),
-          };
-        });
-      }
-    }
+  // Filters unimported notes
+  const filteredRawNotes = rawNotes.filter((n) => {
+    const isProcessed = masteredDeck.some((m) => m.id === n.id || m.title === n.title);
+    if (isProcessed) return false;
 
-    const richContext = `
-LECTURE TITLE: ${note.title}
-FOLDER/SUBJECT: ${note.workspace || "General"}
-BRIEF NOTES: ${note.ai_summary || ""}
-=========================================
-FULL MEETING TRANSCRIPT (CORE SOURCE OF TRUTH):
-${note.transcript || "No transcript available."}
-=========================================
-`;
+    if (!selectedFolderId || selectedFolderId === "all" || selectedFolderId === "all_notes") return true;
+    return n.folder_id === selectedFolderId || n.workspace === selectedFolderId || n.workspace_name === selectedFolderId;
+  });
 
-    parseText(richContext, note.title, note.workspace);
-  };
-
-  const handleSelectRawNote = (n: GranolaNote) => {
-    setActiveLecture(null);
-    setSelectedRawNote(n);
-  };
-  const handleSelectMastered = (l: Lecture) => {
-    setSelectedRawNote(null);
-    setActiveLecture(l);
-  };
-
-  const isMastered = activeLecture
-    ? lectures.some((l) => l.id === activeLecture.id || l.title === activeLecture.title)
+  const isMastered = selectedNote
+    ? masteredDeck.some((l) => l.id === selectedNote.id || l.title === selectedNote.title)
     : false;
-
-  const showInitialPlaceholder =
-    visibleRawNotes.length === 0 && !activeLecture && !selectedRawNote;
 
   return (
     <div className="space-y-6">
@@ -463,7 +473,6 @@ ${note.transcript || "No transcript available."}
       <div className="grid md:grid-cols-[300px_1fr] gap-4">
         {/* SIDEBAR */}
         <div className="space-y-4">
-          {/* CONNECT BUTTON */}
           <ConnectButton status={connStatus} onClick={checkConnection} />
 
           {/* WORKSPACE SELECTOR */}
@@ -474,15 +483,15 @@ ${note.transcript || "No transcript available."}
             </label>
             <select
               value={selectedFolderId}
-              onChange={(e) => handleFolderSelect(e.target.value)}
+              onChange={(e) => setSelectedFolderId(e.target.value)}
               disabled={connStatus !== "connected" || foldersLoading}
               className="w-full mt-1.5 rounded-md bg-input border border-border p-2 text-sm text-foreground focus:outline-none focus:border-indigo-arcade disabled:opacity-50"
             >
               {connStatus !== "connected" && <option>— Connect to Granola first —</option>}
-              {connStatus === "connected" && folders.length === 0 && (
+              {connStatus === "connected" && workspaces.length === 0 && (
                 <option>— No workspaces found —</option>
               )}
-              {folders.map((f) => (
+              {workspaces.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
@@ -490,16 +499,16 @@ ${note.transcript || "No transcript available."}
             </select>
           </div>
 
-          {/* RAW NOTES */}
+          {/* UNIMPORTED RAW NOTES */}
           <div className="space-y-2">
             <h4 className="text-xs font-bold uppercase tracking-wider text-amber-arcade flex items-center justify-between gap-1.5 px-1 w-full">
               <span className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
-                Granola Raw Notes ({visibleRawNotes.length})
+                Granola Raw Notes ({filteredRawNotes.length})
               </span>
               <div className="flex items-center gap-2">
                 {notesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-                {visibleRawNotes.length > 0 && (
+                {filteredRawNotes.length > 0 && (
                   <button
                     onClick={handleClearAllRawNotes}
                     className="text-[10px] text-muted-foreground hover:text-destructive uppercase font-bold tracking-wider transition-colors cursor-pointer"
@@ -511,14 +520,14 @@ ${note.transcript || "No transcript available."}
               </div>
             </h4>
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-              {visibleRawNotes.length === 0 ? (
+              {filteredRawNotes.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic p-2">
                   {connStatus === "connected"
                     ? "No notes in this workspace yet."
                     : "Connect to Granola or load mock data below."}
                 </p>
               ) : (
-                visibleRawNotes.map((t) => (
+                filteredRawNotes.map((t) => (
                   <div
                     key={t.id}
                     className={`group flex items-center justify-between gap-1 w-full rounded-lg border border-dashed transition-all ${
@@ -528,7 +537,7 @@ ${note.transcript || "No transcript available."}
                     }`}
                   >
                     <button
-                      disabled={loading}
+                      disabled={loading || isImporting}
                       onClick={() => handleSelectRawNote(t)}
                       className="flex-1 text-left p-2.5 flex flex-col gap-1 disabled:opacity-50"
                     >
@@ -536,7 +545,7 @@ ${note.transcript || "No transcript available."}
                         {t.title}
                       </div>
                       <div className="text-[10px] text-muted-foreground flex items-center justify-between w-full">
-                        <span className="line-clamp-1">{t.workspace}</span>
+                        <span className="line-clamp-1">{t.workspace_name || t.workspace}</span>
                         <span className="text-amber-arcade font-bold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           View <ArrowRight className="h-2.5 w-2.5" />
                         </span>
@@ -558,11 +567,11 @@ ${note.transcript || "No transcript available."}
             </div>
           </div>
 
-          {/* MASTERED */}
+          {/* MASTERED PORTAL DECK */}
           <div className="space-y-2 pt-2 border-t border-border">
             <h4 className="text-xs font-bold uppercase tracking-wider text-fuchsia-arcade px-1 flex items-center justify-between w-full">
-              <span>🎮 Mastered Portal Deck ({lectures.length})</span>
-              {lectures.length > 0 && (
+              <span>🎮 Mastered Portal Deck ({masteredDeck.length})</span>
+              {masteredDeck.length > 0 && (
                 <button
                   onClick={handleClearAllMasteredNotes}
                   className="text-[10px] text-muted-foreground hover:text-destructive uppercase font-bold tracking-wider transition-colors cursor-pointer"
@@ -573,14 +582,14 @@ ${note.transcript || "No transcript available."}
               )}
             </h4>
             <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-              {lectures.length === 0 ? (
+              {masteredDeck.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic p-2">No study guides yet.</p>
               ) : (
-                lectures.map((l) => (
+                masteredDeck.map((l) => (
                   <div
                     key={l.id}
                     className={`group flex items-center justify-between gap-1 w-full rounded-lg border transition-all ${
-                      activeLecture?.id === l.id
+                      selectedNote?.id === l.id
                         ? "bg-fuchsia-arcade/20 border-fuchsia-arcade"
                         : "bg-card border-border hover:bg-muted hover:scale-[1.01]"
                     }`}
@@ -593,7 +602,7 @@ ${note.transcript || "No transcript available."}
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {l.workspace} ·{" "}
                         <span className="text-emerald-arcade font-medium">
-                          {l.parsed.difficulty}
+                          {l.parsed?.difficulty || "Intermediate"}
                         </span>
                       </div>
                     </button>
@@ -643,19 +652,18 @@ ${note.transcript || "No transcript available."}
             </div>
           </div>
 
-          {showInitialPlaceholder ? (
-            <div className="arcade-card p-12 text-center flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-indigo-arcade/50 bg-indigo-arcade/5 animate-bounce-in">
-              <BookOpen className="h-16 w-16 text-indigo-arcade animate-pulse" />
-              <h3 className="font-bold text-xl text-foreground">Ready to study?</h3>
-              <p className="text-sm text-muted-foreground max-w-md">
-                Paste some notes, connect your Granola workspace, or click this button to load our pre-populated sample modules!
-              </p>
-              <Button
+          {/* STEP 6: RENDER THE PLACEHOLDER BANNER */}
+          {rawNotes.length === 0 && masteredDeck.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-800 rounded-2xl border border-dashed border-slate-700 max-w-lg mx-auto mt-12">
+              <span className="text-5xl mb-4">🎮</span>
+              <h3 className="text-xl font-bold text-slate-200 mb-2">Ready to study?</h3>
+              <p className="text-slate-400 max-w-sm mb-6">Connect your Granola workspace, paste custom text, or load our pre-populated sample modules to explore the study arcade!</p>
+              <button
                 onClick={handleLoadMockData}
-                className="bg-indigo-arcade hover:bg-indigo-arcade/80 text-primary-foreground font-bold px-6 py-5 rounded-lg transition-all active:scale-95"
+                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition duration-200 cursor-pointer"
               >
                 Load Sample Mock Data 📚
-              </Button>
+              </button>
             </div>
           ) : selectedRawNote ? (
             <div className="arcade-card p-10 text-center flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-amber-arcade/50 bg-amber-arcade/5 animate-bounce-in">
@@ -668,30 +676,30 @@ ${note.transcript || "No transcript available."}
                 {selectedRawNote.ai_summary || <em>No summary available.</em>}
               </div>
               <Button
-                onClick={handleImportSelected}
-                disabled={loading}
+                onClick={() => handleImportAndProcess(selectedRawNote)}
+                disabled={isImporting}
                 className="bg-amber-arcade hover:bg-amber-arcade/80 text-background font-bold text-base px-6 py-6 rounded-xl animate-pulse-glow"
               >
-                {loading ? (
+                {isImporting ? (
                   <>
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Analyzing...
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Importing & Processing...
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-5 w-5 mr-2" /> Import & Analyze with AI ⚡
+                    <Sparkles className="h-5 w-5 mr-2" /> Import & Process with AI ⚡
                   </>
                 )}
               </Button>
             </div>
-          ) : activeLecture ? (
+          ) : selectedNote ? (
             <>
               <div className="arcade-card p-5 border-l-4 border-l-indigo-arcade">
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                   <h3 className="font-bold text-lg text-foreground">
-                    🍰 Summary Panel — {activeLecture.title}
+                    🍰 Summary Panel — {selectedNote.title}
                   </h3>
                   <div className="flex gap-1.5 flex-wrap">
-                    {activeLecture.parsed.tags.map((t) => (
+                    {selectedNote.parsed?.tags?.map((t: string) => (
                       <span
                         key={t}
                         className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-arcade/20 border border-indigo-arcade/40 text-indigo-arcade"
@@ -701,11 +709,11 @@ ${note.transcript || "No transcript available."}
                     ))}
                   </div>
                 </div>
-                <Markdown text={activeLecture.parsed.summary} />
+                <Markdown text={selectedNote.summary || selectedNote.parsed?.summary || ""} />
                 <div className="pt-3 mt-3 border-t border-border/50">
                   <Button
                     disabled={isMastered}
-                    onClick={() => handleAddToMasteredDeck(activeLecture)}
+                    onClick={() => handleAddToMasteredDeck(selectedNote)}
                     className={`w-full py-5 text-sm font-bold uppercase tracking-wider rounded-lg ${
                       isMastered
                         ? "bg-emerald-arcade/20 border border-emerald-arcade text-emerald-arcade opacity-80"
@@ -722,7 +730,7 @@ ${note.transcript || "No transcript available."}
                   🃏 Flashcard Arena (Click to flip)
                 </h3>
                 <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {activeLecture.parsed.flashcards.map((f, i) => (
+                  {(selectedNote.flashcards || selectedNote.parsed?.flashcards || []).map((f: any, i: number) => (
                     <div
                       key={i}
                       onClick={() => setFlipped((p) => ({ ...p, [i]: !p[i] }))}
@@ -741,21 +749,28 @@ ${note.transcript || "No transcript available."}
                 </div>
               </div>
 
-              {/* COLLAPSIBLE SOURCE MATERIAL DRAWER */}
-              <div className="arcade-card p-4 border border-border bg-card/50">
+              {/* STEP 5: ADD THE COLLAPSIBLE SOURCE PANEL */}
+              <div className="mt-8 border-t border-slate-700 pt-4">
                 <button
-                  onClick={() => setSourceExpanded(!sourceExpanded)}
-                  className="w-full flex items-center justify-between text-sm font-semibold text-foreground/80 hover:text-foreground transition-colors cursor-pointer"
+                  onClick={() => setShowOriginalSource(!showOriginalSource)}
+                  className="flex items-center justify-between w-full p-3 bg-slate-800 rounded-lg hover:bg-slate-750 transition cursor-pointer"
                 >
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
+                  <span className="font-semibold text-slate-200 flex items-center gap-2">
                     📄 View Original Source Material (Granola Transcript & Notes)
                   </span>
-                  {sourceExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <span>{showOriginalSource ? '▲' : '▼'}</span>
                 </button>
-                {sourceExpanded && (
-                  <div className="mt-3 p-3 bg-input/60 rounded-md border border-border text-xs text-foreground/90 whitespace-pre-wrap max-h-60 overflow-y-auto font-mono">
-                    {activeLecture.raw || "No original source material available."}
+                
+                {showOriginalSource && (
+                  <div className="mt-4 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 space-y-4 text-left">
+                    <div>
+                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Original Notes</h4>
+                      <p className="whitespace-pre-line">{selectedNote.notes || 'No original notes.'}</p>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Full Transcript</h4>
+                      <p className="whitespace-pre-line">{selectedNote.transcript || 'No transcript available.'}</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -786,7 +801,7 @@ function ConnectButton({
     return (
       <button
         onClick={onClick}
-        className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-emerald-arcade bg-emerald-arcade/15 text-emerald-arcade font-bold py-3 transition-all hover:bg-emerald-arcade/25 shadow-[0_0_20px_rgba(16,185,129,0.4)]"
+        className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-emerald-arcade bg-emerald-arcade/15 text-emerald-arcade font-bold py-3 transition-all hover:bg-emerald-arcade/25 shadow-[0_0_20px_rgba(16,185,129,0.4)] cursor-pointer"
       >
         <CheckCircle2 className="h-4 w-4" />
         Granola Connected ✔️
@@ -806,7 +821,7 @@ function ConnectButton({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-fuchsia-arcade bg-fuchsia-arcade/15 text-fuchsia-arcade font-bold py-3 transition-all hover:bg-fuchsia-arcade/25 hover:scale-[1.02] active:scale-95 animate-pulse-glow"
+      className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-fuchsia-arcade bg-fuchsia-arcade/15 text-fuchsia-arcade font-bold py-3 transition-all hover:bg-fuchsia-arcade/25 hover:scale-[1.02] active:scale-95 animate-pulse-glow cursor-pointer"
     >
       <Plug className="h-4 w-4" />
       Connect to Granola 🔌
@@ -828,7 +843,7 @@ function Markdown({ text }: { text: string }) {
           return (
             <li
               key={i}
-              className="text-sm text-foreground/90"
+              className="text-sm text-foreground/90 text-left"
               dangerouslySetInnerHTML={{ __html: "• " + html }}
             />
           );
