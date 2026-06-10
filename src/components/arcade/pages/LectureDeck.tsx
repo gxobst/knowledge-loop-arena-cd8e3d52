@@ -69,15 +69,16 @@ export function LectureDeck() {
     setLectures(masteredDeck);
   }, [masteredDeck, setLectures]);
 
-  // Initial Sync Hook — Load global lectures on mount if present
+  // Initial Sync Hook — Load global lectures on mount if present (run once on mount)
   useEffect(() => {
-    if (lectures && lectures.length > 0 && masteredDeck.length === 0) {
+    if (lectures && lectures.length > 0) {
       setMasteredDeck(lectures);
     }
-    if (activeLecture && !selectedNote) {
+    if (activeLecture) {
       setSelectedNote(activeLecture);
     }
-  }, [lectures, activeLecture]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Granola Data Fetcher
   const fetchGranolaData = async () => {
@@ -304,6 +305,7 @@ export function LectureDeck() {
         id: detailNote.id,
         title: detailNote.title,
         workspace: detailNote.workspace_name || detailNote.workspace || 'General',
+        raw: richContext,
         summary: parsedData.summary,
         flashcards: parsedData.flashcards,
         quiz: parsedData.quiz,
@@ -346,6 +348,7 @@ export function LectureDeck() {
         id: crypto.randomUUID(),
         title: titleHint,
         workspace: assumedWorkspace,
+        raw: text,
         summary: parsedData.summary,
         flashcards: parsedData.flashcards,
         quiz: parsedData.quiz,
@@ -369,6 +372,7 @@ export function LectureDeck() {
           id: crypto.randomUUID(),
           title: titleHint,
           workspace: assumedWorkspace,
+          raw: text,
           summary: fallbackData.summary,
           flashcards: fallbackData.flashcards,
           quiz: fallbackData.quiz,
@@ -418,8 +422,14 @@ export function LectureDeck() {
   };
 
   const handleSelectRawNote = (n: any) => {
-    setSelectedNote(null);
-    setSelectedRawNote(n);
+    const existing = masteredDeck.find((m) => m.id === n.id);
+    if (existing) {
+      setSelectedNote(existing);
+      setSelectedRawNote(null);
+    } else {
+      setSelectedNote(null);
+      setSelectedRawNote(n);
+    }
   };
 
   const handleSelectMastered = (l: any) => {
@@ -669,8 +679,11 @@ export function LectureDeck() {
             <div className="arcade-card p-10 text-center flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-amber-arcade/50 bg-amber-arcade/5 animate-bounce-in">
               <FileText className="h-14 w-14 text-amber-arcade animate-pulse" />
               <h3 className="font-bold text-xl text-foreground">
-                Importing Note: {selectedRawNote.title}
+                Selected: {selectedRawNote.title}
               </h3>
+              <p className="text-sm text-muted-foreground max-w-md">
+                This lecture has not been analyzed yet. Click 'Import & Process with AI ⚡' to generate your study arcade.
+              </p>
               <div className="bg-muted/40 p-4 rounded-lg w-full text-left max-h-40 overflow-y-auto text-xs border border-border">
                 <strong>AI Summary:</strong>{" "}
                 {selectedRawNote.ai_summary || <em>No summary available.</em>}
@@ -762,14 +775,18 @@ export function LectureDeck() {
                 </button>
                 
                 {showOriginalSource && (
-                  <div className="mt-4 p-4 bg-slate-900 rounded-lg max-h-60 overflow-y-auto text-sm text-slate-300 space-y-4 text-left">
-                    <div>
-                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Original Notes</h4>
-                      <p className="whitespace-pre-line">{selectedNote.notes || 'No original notes.'}</p>
+                  <div className="grid md:grid-cols-2 gap-4 mt-4 text-left">
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Original Notes</span>
+                      <div className="p-3 bg-slate-900 rounded border border-slate-800 h-48 overflow-y-auto text-xs whitespace-pre-line text-slate-300">
+                        {selectedNote.notes || 'No original notes.'}
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-2">Full Transcript</h4>
-                      <p className="whitespace-pre-line">{selectedNote.transcript || 'No transcript available.'}</p>
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Full Transcript</span>
+                      <div className="p-3 bg-slate-900 rounded border border-slate-800 h-48 overflow-y-auto text-xs whitespace-pre-line text-slate-300">
+                        {selectedNote.transcript || 'No transcript available.'}
+                      </div>
                     </div>
                   </div>
                 )}

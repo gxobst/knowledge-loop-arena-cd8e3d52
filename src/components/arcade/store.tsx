@@ -27,6 +27,8 @@ export interface Lecture {
   workspace: string;
   raw: string;
   parsed: ParsedLecture;
+  notes?: string;
+  transcript?: string;
 }
 
 interface Ctx {
